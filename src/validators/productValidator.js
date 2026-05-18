@@ -3,11 +3,11 @@ import { body, query, validationResult } from 'express-validator';
 const VALID_CATEGORIES = ['electronics', 'clothing', 'food', 'books', 'other'];
 const VALID_STATUSES = ['active', 'inactive', 'discontinued'];
 
-const collectErrors = (req, res, next) => {
+const collectErrors = (status) => (req, res, next) => {
   const result = validationResult(req);
   if (!result.isEmpty()) {
     const err = new Error(result.array().map(e => e.msg).join('; '));
-    err.status = 400;
+    err.status = status;
     return next(err);
   }
   next();
@@ -20,7 +20,9 @@ const nameRule = (required) =>
 
 const skuRule = (required) =>
   required
-    ? body('sku').notEmpty().withMessage('sku is required')
+    ? body('sku')
+        .notEmpty().withMessage('sku is required')
+        .matches(/^[A-Za-z0-9-]+$/).withMessage('sku must contain only letters, numbers, and hyphens')
     : body('sku').optional().notEmpty().withMessage('sku is required');
 
 const sharedBodyRules = [
@@ -51,18 +53,28 @@ const sharedBodyRules = [
     .withMessage(`status must be one of: ${VALID_STATUSES.join(', ')}`),
 ];
 
+const requireNonEmptyBody = (req, res, next) => {
+  if (!req.body || Object.keys(req.body).length === 0) {
+    const err = new Error('Request body must not be empty');
+    err.status = 400;
+    return next(err);
+  }
+  next();
+};
+
 export const validateCreate = [
   nameRule(true),
   skuRule(true),
   ...sharedBodyRules,
-  collectErrors,
+  collectErrors(422),
 ];
 
 export const validateUpdate = [
+  requireNonEmptyBody,
   nameRule(false),
   skuRule(false),
   ...sharedBodyRules,
-  collectErrors,
+  collectErrors(400),
 ];
 
 export const validateFilters = [
@@ -90,5 +102,5 @@ export const validateFilters = [
     .optional()
     .isIn(['true', 'false'])
     .withMessage('inStock must be true or false'),
-  collectErrors,
+  collectErrors(422),
 ];

@@ -136,9 +136,11 @@ const deleteById = (id) => {
 
 const restore = (id) => {
   const product = byId.get(id);
-  if (!product) return null;
+  if (!product || product.archivedAt === null) return null;
   product.archivedAt = null;
   return product;
 };
 
-export default { findAll, findById, findBySku, create, update, delete: deleteById, restore };
+const _reset = () => { byId.clear(); bySku.clear(); };
+
+export default { findAll, findById, findBySku, create, update, delete: deleteById, restore, _reset };
