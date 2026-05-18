@@ -36,17 +36,22 @@ const validate = (data, requireAll = true) => {
 };
 
 const findAll = (filters = {}) => {
-  let results = [...store];
+  let results = [...store].filter(p => p.archivedAt === null);
   if (filters.category) results = results.filter(p => p.category === filters.category);
   if (filters.status) results = results.filter(p => p.status === filters.status);
-  if (filters.name) {
-    const q = filters.name.toLowerCase();
-    results = results.filter(p => p.name.toLowerCase().includes(q));
+  if (filters.minPrice != null) results = results.filter(p => p.price != null && p.price >= filters.minPrice);
+  if (filters.maxPrice != null) results = results.filter(p => p.price != null && p.price <= filters.maxPrice);
+  if (filters.inStock != null) results = results.filter(p => filters.inStock ? p.stock > 0 : p.stock === 0);
+  if (filters.search) {
+    const q = filters.search.toLowerCase();
+    results = results.filter(p =>
+      p.name.toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q)
+    );
   }
   return results;
 };
 
-const findById = (id) => store.find(p => p.id === id) ?? null;
+const findById = (id) => store.find(p => p.id === id && p.archivedAt === null) ?? null;
 
 const findBySku = (sku) => store.find(p => p.sku === sku) ?? null;
 
@@ -74,6 +79,7 @@ const create = (data) => {
     stock: data.stock ?? 0,
     status: data.status ?? 'active',
     createdAt: new Date(),
+    archivedAt: null,
   };
 
   store.push(product);
@@ -82,7 +88,7 @@ const create = (data) => {
 
 const update = (id, patch) => {
   const index = store.findIndex(p => p.id === id);
-  if (index === -1) return null;
+  if (index === -1 || store[index].archivedAt !== null) return null;
 
   const errors = validate(patch, false);
   if (errors.length) {
@@ -107,9 +113,16 @@ const update = (id, patch) => {
 
 const deleteById = (id) => {
   const index = store.findIndex(p => p.id === id);
-  if (index === -1) return null;
-  const [deleted] = store.splice(index, 1);
-  return deleted;
+  if (index === -1 || store[index].archivedAt !== null) return null;
+  store[index] = { ...store[index], archivedAt: new Date() };
+  return store[index];
 };
 
-export default { findAll, findById, findBySku, create, update, delete: deleteById };
+const restore = (id) => {
+  const index = store.findIndex(p => p.id === id);
+  if (index === -1) return null;
+  store[index] = { ...store[index], archivedAt: null };
+  return store[index];
+};
+
+export default { findAll, findById, findBySku, create, update, delete: deleteById, restore };
