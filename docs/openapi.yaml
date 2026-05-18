@@ -1,0 +1,716 @@
+openapi: 3.1.0
+
+info:
+  title: Product Management API
+  version: 1.0.0
+  description: >
+    REST API for managing a product catalogue. Products support full CRUD
+    operations, text search, price and stock filtering, and a soft-archive /
+    restore lifecycle so deleted products can be recovered. SKUs are globally
+    unique and permanently reserved — even an archived product holds its SKU,
+    preventing accidental reuse by a later product.
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+
+paths:
+
+  /products:
+
+    get:
+      operationId: getProducts
+      summary: List products
+      description: >
+        Returns all non-archived products that satisfy the supplied filters.
+        Products whose archivedAt field is non-null are always excluded.
+        All query parameters are optional and may be freely combined.
+        Invalid parameter values produce a 422 response before any store
+        access occurs.
+      parameters:
+        - name: category
+          in: query
+          required: false
+          description: Exact match on product category.
+          schema:
+            type: string
+            enum: [electronics, clothing, food, books, other]
+          example: electronics
+
+        - name: status
+          in: query
+          required: false
+          description: Exact match on lifecycle status.
+          schema:
+            type: string
+            enum: [active, inactive, discontinued]
+          example: active
+
+        - name: minPrice
+          in: query
+          required: false
+          description: >
+            Inclusive lower bound on price. Products with no price set are
+            excluded when this parameter is present. Must be a valid number
+            (coerced from the query string with parseFloat).
+          schema:
+            type: number
+          example: 10
+
+        - name: maxPrice
+          in: query
+          required: false
+          description: >
+            Inclusive upper bound on price. Products with no price set are
+            excluded when this parameter is present. Must be a valid number
+            (coerced from the query string with parseFloat).
+          schema:
+            type: number
+          example: 99.99
+
+        - name: inStock
+          in: query
+          required: false
+          description: >
+            Stock availability filter. Because HTTP query parameters carry no
+            boolean type, this is transmitted as the string "true" or "false".
+            "true" returns only products with stock > 0; "false" returns only
+            products with stock = 0.
+          schema:
+            type: string
+            enum: ['true', 'false']
+          example: 'true'
+
+        - name: search
+          in: query
+          required: false
+          description: >
+            Case-insensitive substring match evaluated against both name and
+            description. No server-side validation is applied to this parameter;
+            an empty string matches all products.
+          schema:
+            type: string
+          example: keyboard
+
+      responses:
+        '200':
+          description: Matching products returned successfully (may be an empty array).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductListEnvelope'
+              example:
+                success: true
+                data:
+                  - id: d290f1ee-6c54-4b01-90e6-d701748f0851
+                    name: Wireless Keyboard
+                    sku: WKB-2024-BLK
+                    description: Compact tenkeyless mechanical keyboard
+                    category: electronics
+                    price: 79.99
+                    stock: 150
+                    status: active
+                    createdAt: '2024-01-15T09:00:00.000Z'
+                    archivedAt: null
+                error: null
+
+        '422':
+          description: One or more query parameters failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data: null
+                error: "category must be one of: electronics, clothing, food, books, other"
+
+    # -------------------------------------------------------------------------
+
+    post:
+      operationId: createProduct
+      summary: Create a product
+      description: >
+        Creates a new product and returns the persisted object. name and sku
+        are required. SKU uniqueness is enforced globally and permanently — a
+        SKU belonging to a soft-archived product is still considered taken
+        and will produce a 409. Validation failures from the request body
+        produce a 422 before the store is written.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductInput'
+            example:
+              name: Wireless Keyboard
+              sku: WKB-2024-BLK
+              description: Compact tenkeyless mechanical keyboard
+              category: electronics
+              price: 79.99
+              stock: 150
+              status: active
+
+      responses:
+        '201':
+          description: Product created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductEnvelope'
+              example:
+                success: true
+                data:
+                  id: d290f1ee-6c54-4b01-90e6-d701748f0851
+                  name: Wireless Keyboard
+                  sku: WKB-2024-BLK
+                  description: Compact tenkeyless mechanical keyboard
+                  category: electronics
+                  price: 79.99
+                  stock: 150
+                  status: active
+                  createdAt: '2024-01-15T09:00:00.000Z'
+                  archivedAt: null
+                error: null
+
+        '409':
+          description: >
+            A product with the supplied SKU already exists. This applies to
+            active and archived products alike — SKUs are never freed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data: null
+                error: "SKU 'WKB-2024-BLK' already exists"
+
+        '422':
+          description: >
+            Request body failed schema validation. The error message lists all
+            violations joined by semicolons.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data: null
+                error: "name is required; sku is required"
+
+  # ---------------------------------------------------------------------------
+
+  /products/{id}:
+
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: UUID of the product.
+        schema:
+          type: string
+          format: uuid
+        example: d290f1ee-6c54-4b01-90e6-d701748f0851
+
+    get:
+      operationId: getProductById
+      summary: Get a product
+      description: >
+        Returns a single non-archived product by UUID. Archived products are
+        treated as absent — both unknown IDs and soft-deleted IDs return 404
+        so callers cannot distinguish between the two cases.
+      responses:
+        '200':
+          description: Product found and returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductEnvelope'
+              example:
+                success: true
+                data:
+                  id: d290f1ee-6c54-4b01-90e6-d701748f0851
+                  name: Wireless Keyboard
+                  sku: WKB-2024-BLK
+                  description: Compact tenkeyless mechanical keyboard
+                  category: electronics
+                  price: 79.99
+                  stock: 150
+                  status: active
+                  createdAt: '2024-01-15T09:00:00.000Z'
+                  archivedAt: null
+                error: null
+
+        '404':
+          description: Product not found or has been archived.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data: null
+                error: Product not found
+
+    patch:
+      operationId: updateProduct
+      summary: Partially update a product
+      description: >
+        Applies a partial update to an existing, non-archived product. Only
+        the fields name, description, category, price, stock, and status are
+        accepted; all other keys (including id and sku) are silently discarded
+        by the controller before the patch reaches the model. Because sku is
+        always stripped, a SKU conflict (409) cannot occur on this endpoint.
+        The request body must contain at least one field — an empty body
+        returns 400.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductPatch'
+            example:
+              price: 69.99
+              stock: 120
+
+      responses:
+        '200':
+          description: Product updated and returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductEnvelope'
+              example:
+                success: true
+                data:
+                  id: d290f1ee-6c54-4b01-90e6-d701748f0851
+                  name: Wireless Keyboard
+                  sku: WKB-2024-BLK
+                  description: Compact tenkeyless mechanical keyboard
+                  category: electronics
+                  price: 69.99
+                  stock: 120
+                  status: active
+                  createdAt: '2024-01-15T09:00:00.000Z'
+                  archivedAt: null
+                error: null
+
+        '400':
+          description: >
+            Request body is empty, or one or more supplied fields failed
+            validation rules.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                emptyBody:
+                  summary: Empty request body
+                  value:
+                    success: false
+                    data: null
+                    error: Request body must not be empty
+                invalidField:
+                  summary: Field validation failure
+                  value:
+                    success: false
+                    data: null
+                    error: price must be a positive number with up to 2 decimal places
+
+        '404':
+          description: Product not found or is archived.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data: null
+                error: Product not found
+
+    delete:
+      operationId: deleteProduct
+      summary: Soft-archive a product
+      description: >
+        Soft-archives the product by stamping its archivedAt timestamp with
+        the current time. The record is retained in the store; the product
+        will no longer appear in list or get-by-ID responses. Its SKU remains
+        permanently reserved. Sending this request against an already-archived
+        product is treated as not found and returns 404. A successful archive
+        returns 204 with no response body.
+      responses:
+        '204':
+          description: Product archived successfully. No response body.
+
+        '404':
+          description: Product not found or is already archived.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data: null
+                error: Product not found
+
+  # ---------------------------------------------------------------------------
+
+  /products/{id}/restore:
+
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: UUID of the archived product to restore.
+        schema:
+          type: string
+          format: uuid
+        example: d290f1ee-6c54-4b01-90e6-d701748f0851
+
+    delete:
+      operationId: restoreProduct
+      summary: Restore an archived product
+      description: >
+        Clears the archivedAt timestamp, making the product visible again to
+        the list and get-by-ID endpoints. Returns 404 for both unknown IDs
+        and products that are not currently archived — the model cannot
+        distinguish between the two cases. Note: this endpoint uses the HTTP
+        DELETE method (matching the route mount in products.js) rather than
+        the semantically closer POST or PATCH.
+      responses:
+        '200':
+          description: Product restored and returned with archivedAt set to null.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductEnvelope'
+              example:
+                success: true
+                data:
+                  id: d290f1ee-6c54-4b01-90e6-d701748f0851
+                  name: Wireless Keyboard
+                  sku: WKB-2024-BLK
+                  description: Compact tenkeyless mechanical keyboard
+                  category: electronics
+                  price: 79.99
+                  stock: 150
+                  status: active
+                  createdAt: '2024-01-15T09:00:00.000Z'
+                  archivedAt: null
+                error: null
+
+        '404':
+          description: Product not found or is not currently archived.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data: null
+                error: Product not found
+
+# ---------------------------------------------------------------------------
+# Reusable component schemas
+# ---------------------------------------------------------------------------
+
+components:
+  schemas:
+
+    # -------------------------------------------------------------------------
+    # Product — full persisted object
+    # -------------------------------------------------------------------------
+    Product:
+      type: object
+      description: >
+        Full product object as stored and returned by the API.
+        id, createdAt, and archivedAt are server-managed and read-only.
+      required:
+        - id
+        - name
+        - sku
+        - description
+        - category
+        - price
+        - stock
+        - status
+        - createdAt
+        - archivedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+          description: Auto-generated UUID assigned at creation.
+          example: d290f1ee-6c54-4b01-90e6-d701748f0851
+
+        name:
+          type: string
+          minLength: 1
+          description: Human-readable product name.
+          example: Wireless Keyboard
+
+        sku:
+          type: string
+          pattern: '^[A-Za-z0-9-]+$'
+          description: >
+            Globally unique stock-keeping unit composed of letters, numbers,
+            and hyphens. Once registered, a SKU is permanently reserved —
+            archiving a product does not free the SKU for reuse.
+          example: WKB-2024-BLK
+
+        description:
+          type: ['string', 'null']
+          description: Optional long-form product description. null when not provided.
+          default: null
+          example: Compact tenkeyless mechanical keyboard
+
+        category:
+          type: ['string', 'null']
+          enum: [electronics, clothing, food, books, other, null]
+          description: Product category. null when not provided.
+          default: null
+          example: electronics
+
+        price:
+          type: ['number', 'null']
+          exclusiveMinimum: 0
+          multipleOf: 0.01
+          description: >
+            Unit price. Must be a positive number with at most 2 decimal
+            places. null when not provided.
+          default: null
+          example: 79.99
+
+        stock:
+          type: integer
+          minimum: 0
+          description: Available unit count. Non-negative integer.
+          default: 0
+          example: 150
+
+        status:
+          type: string
+          enum: [active, inactive, discontinued]
+          description: Lifecycle status of the product.
+          default: active
+          example: active
+
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+          description: ISO 8601 timestamp recorded at creation. Read-only.
+          example: '2024-01-15T09:00:00.000Z'
+
+        archivedAt:
+          type: ['string', 'null']
+          format: date-time
+          readOnly: true
+          description: >
+            ISO 8601 timestamp set when the product is soft-archived; null
+            while the product is active. Read-only.
+          default: null
+          example: null
+
+    # -------------------------------------------------------------------------
+    # ProductInput — accepted fields for POST /products
+    # -------------------------------------------------------------------------
+    ProductInput:
+      type: object
+      description: >
+        Fields accepted when creating a new product. name and sku are
+        required; all other fields are optional and fall back to server
+        defaults when omitted (description: null, category: null,
+        price: null, stock: 0, status: "active").
+      required:
+        - name
+        - sku
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Human-readable product name.
+          example: Wireless Keyboard
+
+        sku:
+          type: string
+          pattern: '^[A-Za-z0-9-]+$'
+          description: >
+            Unique stock-keeping unit. Letters, numbers, and hyphens only.
+            Must not match any existing SKU, including those of archived
+            products.
+          example: WKB-2024-BLK
+
+        description:
+          type: string
+          description: Optional long-form product description.
+          example: Compact tenkeyless mechanical keyboard
+
+        category:
+          type: string
+          enum: [electronics, clothing, food, books, other]
+          description: Product category.
+          example: electronics
+
+        price:
+          type: number
+          exclusiveMinimum: 0
+          multipleOf: 0.01
+          description: Unit price; positive with at most 2 decimal places.
+          example: 79.99
+
+        stock:
+          type: integer
+          minimum: 0
+          description: Available unit count. Defaults to 0 when omitted.
+          default: 0
+          example: 150
+
+        status:
+          type: string
+          enum: [active, inactive, discontinued]
+          description: Lifecycle status. Defaults to "active" when omitted.
+          default: active
+          example: active
+
+    # -------------------------------------------------------------------------
+    # ProductPatch — accepted fields for PATCH /products/{id}
+    # -------------------------------------------------------------------------
+    ProductPatch:
+      type: object
+      description: >
+        Fields accepted when partially updating a product. All fields are
+        optional but the request body must contain at least one. id and sku
+        are not patchable — the controller strips them silently if supplied.
+        Only name, description, category, price, stock, and status are
+        forwarded to the model.
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Replacement name.
+          example: Wireless Keyboard Pro
+
+        description:
+          type: string
+          description: Replacement description.
+          example: Full-size wireless mechanical keyboard with numpad
+
+        category:
+          type: string
+          enum: [electronics, clothing, food, books, other]
+          description: Replacement category.
+          example: electronics
+
+        price:
+          type: number
+          exclusiveMinimum: 0
+          multipleOf: 0.01
+          description: Replacement price; positive with at most 2 decimal places.
+          example: 69.99
+
+        stock:
+          type: integer
+          minimum: 0
+          description: Replacement stock count.
+          example: 120
+
+        status:
+          type: string
+          enum: [active, inactive, discontinued]
+          description: Replacement lifecycle status.
+          example: active
+
+    # -------------------------------------------------------------------------
+    # ApiEnvelope — generic success/error wrapper
+    # -------------------------------------------------------------------------
+    ApiEnvelope:
+      type: object
+      description: >
+        Standard response wrapper used by all endpoints that return a body.
+        Successful responses set success to true and populate data with the
+        payload; error responses set success to false and populate error with
+        a human-readable message. Exactly one of data and error is non-null
+        at any time.
+      required:
+        - success
+        - data
+        - error
+      properties:
+        success:
+          type: boolean
+          description: true on success, false on error.
+        data:
+          description: Response payload on success; null on error.
+        error:
+          description: Human-readable error message on error; null on success.
+
+    # -------------------------------------------------------------------------
+    # ProductEnvelope — ApiEnvelope specialised for a single Product
+    # -------------------------------------------------------------------------
+    ProductEnvelope:
+      description: Envelope wrapping a single Product object on success.
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/Product'
+            error:
+              type: 'null'
+
+    # -------------------------------------------------------------------------
+    # ProductListEnvelope — ApiEnvelope specialised for a Product array
+    # -------------------------------------------------------------------------
+    ProductListEnvelope:
+      description: Envelope wrapping an array of Product objects on success.
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Product'
+            error:
+              type: 'null'
+
+    # -------------------------------------------------------------------------
+    # ErrorResponse — envelope for all 4xx responses
+    # -------------------------------------------------------------------------
+    ErrorResponse:
+      type: object
+      description: >
+        Standard error response returned for all 4xx status codes.
+        success is always false, data is always null, and error carries
+        the human-readable reason string. Multiple validation violations
+        are joined with a semicolon separator.
+      required:
+        - success
+        - data
+        - error
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+          description: Always false for error responses.
+        data:
+          type: 'null'
+          description: Always null for error responses.
+        error:
+          type: string
+          description: Human-readable description of what went wrong.
+          example: Product not found
