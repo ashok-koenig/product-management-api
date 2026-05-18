@@ -3,7 +3,10 @@ import { v4 as uuidv4 } from 'uuid';
 const VALID_CATEGORIES = ['electronics', 'clothing', 'food', 'books', 'other'];
 const VALID_STATUSES = ['active', 'inactive', 'discontinued'];
 
-const store = [];
+// Primary index: id → product object
+const byId = new Map();
+// Secondary index: sku → product object (includes archived — SKUs stay reserved)
+const bySku = new Map();
 
 const validate = (data, requireAll = true) => {
   const errors = [];
@@ -35,25 +38,35 @@ const validate = (data, requireAll = true) => {
   return errors;
 };
 
+// Single-pass O(n) scan — avoids allocating intermediate arrays for each filter.
+// Conditions are checked in cheapest-first order so later (costlier) checks
+// are only reached when all earlier ones pass.
 const findAll = (filters = {}) => {
-  let results = [...store].filter(p => p.archivedAt === null);
-  if (filters.category) results = results.filter(p => p.category === filters.category);
-  if (filters.status) results = results.filter(p => p.status === filters.status);
-  if (filters.minPrice != null) results = results.filter(p => p.price != null && p.price >= filters.minPrice);
-  if (filters.maxPrice != null) results = results.filter(p => p.price != null && p.price <= filters.maxPrice);
-  if (filters.inStock != null) results = results.filter(p => filters.inStock ? p.stock > 0 : p.stock === 0);
-  if (filters.search) {
-    const q = filters.search.toLowerCase();
-    results = results.filter(p =>
-      p.name.toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q)
-    );
+  const q = filters.search ? filters.search.toLowerCase() : null;
+  const results = [];
+
+  for (const p of byId.values()) {
+    if (p.archivedAt !== null) continue;
+    if (filters.category && p.category !== filters.category) continue;
+    if (filters.status && p.status !== filters.status) continue;
+    if (filters.minPrice != null && (p.price == null || p.price < filters.minPrice)) continue;
+    if (filters.maxPrice != null && (p.price == null || p.price > filters.maxPrice)) continue;
+    if (filters.inStock != null && (filters.inStock ? p.stock <= 0 : p.stock !== 0)) continue;
+    if (q && !p.name.toLowerCase().includes(q) && !(p.description ?? '').toLowerCase().includes(q)) continue;
+    results.push(p);
   }
+
   return results;
 };
 
-const findById = (id) => store.find(p => p.id === id && p.archivedAt === null) ?? null;
+// O(1) — direct Map lookup
+const findById = (id) => {
+  const p = byId.get(id);
+  return p && p.archivedAt === null ? p : null;
+};
 
-const findBySku = (sku) => store.find(p => p.sku === sku) ?? null;
+// O(1) — direct Map lookup
+const findBySku = (sku) => bySku.get(sku) ?? null;
 
 const create = (data) => {
   const errors = validate(data, true);
@@ -63,7 +76,7 @@ const create = (data) => {
     throw err;
   }
 
-  if (findBySku(data.sku)) {
+  if (bySku.has(data.sku)) {
     const err = new Error(`SKU '${data.sku}' already exists`);
     err.status = 409;
     throw err;
@@ -82,13 +95,14 @@ const create = (data) => {
     archivedAt: null,
   };
 
-  store.push(product);
+  byId.set(product.id, product);
+  bySku.set(product.sku, product);
   return product;
 };
 
 const update = (id, patch) => {
-  const index = store.findIndex(p => p.id === id);
-  if (index === -1 || store[index].archivedAt !== null) return null;
+  const product = byId.get(id);
+  if (!product || product.archivedAt !== null) return null;
 
   const errors = validate(patch, false);
   if (errors.length) {
@@ -97,32 +111,34 @@ const update = (id, patch) => {
     throw err;
   }
 
-  if (patch.sku && patch.sku !== store[index].sku) {
-    const conflict = findBySku(patch.sku);
-    if (conflict) {
+  if (patch.sku && patch.sku !== product.sku) {
+    if (bySku.has(patch.sku)) {
       const err = new Error(`SKU '${patch.sku}' already exists`);
       err.status = 409;
       throw err;
     }
+    // Remap secondary index before mutating the object
+    bySku.delete(product.sku);
+    bySku.set(patch.sku, product);
   }
 
   const { id: _id, createdAt: _createdAt, ...allowed } = patch;
-  store[index] = { ...store[index], ...allowed };
-  return store[index];
+  Object.assign(product, allowed);
+  return product;
 };
 
 const deleteById = (id) => {
-  const index = store.findIndex(p => p.id === id);
-  if (index === -1 || store[index].archivedAt !== null) return null;
-  store[index] = { ...store[index], archivedAt: new Date() };
-  return store[index];
+  const product = byId.get(id);
+  if (!product || product.archivedAt !== null) return null;
+  product.archivedAt = new Date();
+  return product;
 };
 
 const restore = (id) => {
-  const index = store.findIndex(p => p.id === id);
-  if (index === -1) return null;
-  store[index] = { ...store[index], archivedAt: null };
-  return store[index];
+  const product = byId.get(id);
+  if (!product) return null;
+  product.archivedAt = null;
+  return product;
 };
 
 export default { findAll, findById, findBySku, create, update, delete: deleteById, restore };
