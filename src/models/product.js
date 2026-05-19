@@ -254,5 +254,3 @@ const restore = (id) => {
 const _reset = () => { byId.clear(); bySku.clear(); };
 
 export default { findAll, findById, findBySku, create, update, delete: deleteById, restore, _reset };
-
-// End of product model
