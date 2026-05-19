@@ -166,3 +166,5 @@ export const restoreProduct = catchAsync((req, res, next) => {
   }
   res.json({ success: true, data: product, error: null });
 });
+
+// End of Product Controller
