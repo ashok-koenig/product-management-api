@@ -111,6 +111,22 @@ export const validateBulk = [
   collectErrors(422),
 ];
 
+export const validateBulkStatus = [
+  requireNonEmptyBody,
+  body('ids')
+    .isArray({ min: 1 })
+    .withMessage('ids must be a non-empty array'),
+  body('ids.*')
+    .isUUID()
+    .withMessage('each id must be a valid UUID'),
+  body('status')
+    .notEmpty()
+    .withMessage('status is required')
+    .isIn(VALID_STATUSES)
+    .withMessage(`status must be one of: ${VALID_STATUSES.join(', ')}`),
+  collectErrors(400),
+];
+
 export const validateFilters = [
   query('category')
     .optional()

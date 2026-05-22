@@ -5,6 +5,7 @@ import {
   createProduct,
   createBulkProducts,
   updateProduct,
+  bulkUpdateStatus,
   deleteProduct,
   restoreProduct,
 } from '../controllers/productController.js';
@@ -12,6 +13,7 @@ import {
   validateCreate,
   validateBulk,
   validateUpdate,
+  validateBulkStatus,
   validateFilters,
 } from '../validators/productValidator.js';
 
@@ -21,6 +23,7 @@ router.get('/', validateFilters, getProducts);
 router.get('/:id', getProductById);
 router.post('/', validateCreate, createProduct);
 router.post('/bulk', validateBulk, createBulkProducts);
+router.patch('/bulk-status', validateBulkStatus, bulkUpdateStatus);
 router.patch('/:id', validateUpdate, updateProduct);
 router.delete('/:id/restore', restoreProduct);
 router.delete('/:id', deleteProduct);

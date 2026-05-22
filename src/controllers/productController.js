@@ -105,6 +105,34 @@ export const createBulkProducts = catchAsync((req, res) => {
  *   - `404 Not Found`    — product does not exist or is archived; forwarded via `next(err)`.
  *   - `409 Conflict`     — `sku` change conflicts with an existing SKU (if `sku` were ever added to `PATCH_ALLOWED`).
  */
+/**
+ * Updates the `status` field on multiple non-archived products in a single request.
+ *
+ * All IDs must resolve to existing, non-archived products — if any are unknown
+ * or archived the request fails with 404 and no products are changed.
+ *
+ * @param {import("express").Request}  req       - Express request object.
+ * @param {string[]} req.body.ids                - Array of product UUIDs to update.
+ * @param {string}   req.body.status             - New lifecycle status.
+ * @param {import("express").Response}  res      - Express response object.
+ * @param {import("express").NextFunction} next  - Express next middleware function.
+ *
+ * @returns {void} Responds with:
+ *   - `200 OK`          — `{ success: true, data: Product[], error: null }`
+ *   - `400 Bad Request`  — ids or status failed validation.
+ *   - `404 Not Found`    — one or more IDs do not exist or are archived.
+ */
+export const bulkUpdateStatus = catchAsync((req, res, next) => {
+  const { ids, status } = req.body;
+  const { updated, notFound } = Product.bulkUpdateStatus(ids, status);
+  if (notFound.length) {
+    const err = new Error(`Products not found: ${notFound.join(', ')}`);
+    err.status = 404;
+    return next(err);
+  }
+  res.json({ success: true, data: updated, error: null });
+});
+
 export const updateProduct = catchAsync((req, res, next) => {
   const patch = Object.fromEntries(
     Object.entries(req.body).filter(([k]) => PATCH_ALLOWED.has(k))

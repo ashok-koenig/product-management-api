@@ -319,6 +319,34 @@ const createBulk = (items) => {
   return items.map(item => create(item));
 };
 
-export default { findAll, findById, findBySku, create, createBulk, update, delete: deleteById, restore, _reset };
+/**
+ * Updates the `status` field on multiple non-archived products in one operation.
+ *
+ * All IDs are resolved before any mutation — if any ID is unknown or belongs to
+ * an archived product, the function returns early with a populated `notFound`
+ * array and no products are changed.
+ *
+ * @param {string[]} ids    - Array of product UUIDs to update.
+ * @param {string}   status - New lifecycle status (active | inactive | discontinued).
+ * @returns {{ updated: object[], notFound: string[] }}
+ */
+const bulkUpdateStatus = (ids, status) => {
+  const notFound = ids.filter(id => {
+    const p = byId.get(id);
+    return !p || p.archivedAt !== null;
+  });
+  if (notFound.length) return { updated: [], notFound };
+
+  const updated = ids.map(id => {
+    const product = byId.get(id);
+    indexRemove(product);
+    product.status = status;
+    indexAdd(product);
+    return product;
+  });
+  return { updated, notFound: [] };
+};
+
+export default { findAll, findById, findBySku, create, createBulk, update, delete: deleteById, restore, bulkUpdateStatus, _reset };
 
 // End of product model
