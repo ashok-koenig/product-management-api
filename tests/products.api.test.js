@@ -359,3 +359,97 @@ describe('DELETE /products/:id/restore — never-archived edge case', () => {
     assert.equal(res.body.success, false);
   });
 });
+
+describe('POST /products/bulk', () => {
+  beforeEach(() => Product._reset());
+
+  it('creates all products and returns 201 with array', async () => {
+    const res = await agent.post('/products/bulk').send([
+      { name: 'Keyboard', sku: 'BULK-KB', price: 49.99, category: 'electronics', stock: 20 },
+      { name: 'Mouse', sku: 'BULK-MS', price: 29.99, category: 'electronics', stock: 15 },
+    ]);
+    assert.equal(res.status, 201);
+    assert.equal(res.body.success, true);
+    assert.ok(Array.isArray(res.body.data));
+    assert.equal(res.body.data.length, 2);
+    assert.ok(res.body.data[0].id);
+    assert.ok(res.body.data[0].createdAt);
+    assert.equal(res.body.data[0].sku, 'BULK-KB');
+    assert.equal(res.body.data[1].sku, 'BULK-MS');
+  });
+
+  it('creates a single-item batch', async () => {
+    const res = await agent.post('/products/bulk').send([
+      { name: 'Solo Item', sku: 'SOLO-001', price: 9.99 },
+    ]);
+    assert.equal(res.status, 201);
+    assert.equal(res.body.data.length, 1);
+  });
+
+  it('atomicity: rejects entire batch when one item has missing name', async () => {
+    const res = await agent.post('/products/bulk').send([
+      { name: 'Valid Item', sku: 'BULK-V1', price: 10.00 },
+      { sku: 'BULK-V2', price: 20.00 },
+    ]);
+    assert.equal(res.status, 422);
+    assert.equal(res.body.success, false);
+    const list = await agent.get('/products');
+    assert.equal(list.body.data.length, 0);
+  });
+
+  it('atomicity: rejects entire batch when one item has invalid price', async () => {
+    const res = await agent.post('/products/bulk').send([
+      { name: 'Good', sku: 'BULK-G1', price: 10.00 },
+      { name: 'Bad', sku: 'BULK-G2', price: -5 },
+    ]);
+    assert.equal(res.status, 422);
+    assert.equal(res.body.success, false);
+    const list = await agent.get('/products');
+    assert.equal(list.body.data.length, 0);
+  });
+
+  it('atomicity: rejects entire batch when one item SKU conflicts with store', async () => {
+    await agent.post('/products').send({ name: 'Existing', sku: 'EXIST-001', price: 5.00 });
+    const res = await agent.post('/products/bulk').send([
+      { name: 'New A', sku: 'BULK-A1', price: 10.00 },
+      { name: 'Conflict', sku: 'EXIST-001', price: 20.00 },
+    ]);
+    assert.equal(res.status, 409);
+    assert.equal(res.body.success, false);
+    const list = await agent.get('/products');
+    assert.equal(list.body.data.length, 1);
+  });
+
+  it('rejects batch with intra-batch duplicate SKUs', async () => {
+    const res = await agent.post('/products/bulk').send([
+      { name: 'First', sku: 'DUP-001', price: 10.00 },
+      { name: 'Second', sku: 'DUP-001', price: 20.00 },
+    ]);
+    assert.equal(res.status, 409);
+    assert.equal(res.body.success, false);
+    const list = await agent.get('/products');
+    assert.equal(list.body.data.length, 0);
+  });
+
+  it('collects errors from multiple invalid items', async () => {
+    const res = await agent.post('/products/bulk').send([
+      { sku: 'BULK-E1', price: 10.00 },
+      { sku: 'BULK-E2', price: -1 },
+    ]);
+    assert.equal(res.status, 422);
+    assert.equal(res.body.success, false);
+    assert.ok(typeof res.body.error === 'string' && res.body.error.length > 0);
+  });
+
+  it('rejects an empty array with 422', async () => {
+    const res = await agent.post('/products/bulk').send([]);
+    assert.equal(res.status, 422);
+    assert.equal(res.body.success, false);
+  });
+
+  it('rejects a non-array body with 422', async () => {
+    const res = await agent.post('/products/bulk').send({ name: 'Not an array', sku: 'X' });
+    assert.equal(res.status, 422);
+    assert.equal(res.body.success, false);
+  });
+});

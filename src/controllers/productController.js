@@ -80,6 +80,11 @@ export const createProduct = catchAsync((req, res) => {
   res.status(201).json({ success: true, data: product, error: null });
 });
 
+export const createBulkProducts = catchAsync((req, res) => {
+  const products = Product.createBulk(req.body);
+  res.status(201).json({ success: true, data: products, error: null });
+});
+
 /**
  * Partially updates an existing, non-archived product (PATCH semantics).
  *

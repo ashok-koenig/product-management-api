@@ -7,6 +7,23 @@ const VALID_STATUSES = ['active', 'inactive', 'discontinued'];
 const byId = new Map();
 // Secondary index: sku → product object (includes archived — SKUs stay reserved)
 const bySku = new Map();
+// Filter indexes: non-archived products only; updated on every write
+const byCategory = new Map(); // category string → Set<product>
+const byStatus = new Map();   // status string → Set<product>
+
+const indexAdd = (product) => {
+  if (product.category !== null) {
+    if (!byCategory.has(product.category)) byCategory.set(product.category, new Set());
+    byCategory.get(product.category).add(product);
+  }
+  if (!byStatus.has(product.status)) byStatus.set(product.status, new Set());
+  byStatus.get(product.status).add(product);
+};
+
+const indexRemove = (product) => {
+  byCategory.get(product.category)?.delete(product);
+  byStatus.get(product.status)?.delete(product);
+};
 
 const validate = (data, requireAll = true) => {
   const errors = [];
@@ -44,7 +61,10 @@ const validate = (data, requireAll = true) => {
  * Products whose `archivedAt` timestamp is non-null are always excluded, so
  * soft-deleted entries are invisible to callers of this function.
  * All string comparisons are case-insensitive. Price bounds are inclusive.
- * Single-pass O(n) scan — conditions evaluated cheapest-first.
+ * Uses byCategory / byStatus indexes when those filters are present, reducing
+ * the iterated set to products in that bucket. Remaining filters (price, stock,
+ * search) are applied in-loop. Falls back to full byId scan when neither index
+ * filter is active.
  *
  * @param {object} [filters={}] - Optional filter criteria; omit to return all active products.
  * @param {string}  [filters.search]   - Substring matched against `name` and `description`.
@@ -57,9 +77,14 @@ const validate = (data, requireAll = true) => {
  */
 const findAll = (filters = {}) => {
   const q = filters.search ? filters.search.toLowerCase() : null;
+  const source = filters.category
+    ? (byCategory.get(filters.category) ?? [])
+    : filters.status
+      ? (byStatus.get(filters.status) ?? [])
+      : byId.values();
   const results = [];
 
-  for (const p of byId.values()) {
+  for (const p of source) {
     if (p.archivedAt !== null) continue;
     if (filters.category && p.category !== filters.category) continue;
     if (filters.status && p.status !== filters.status) continue;
@@ -155,6 +180,7 @@ const create = (data) => {
 
   byId.set(product.id, product);
   bySku.set(product.sku, product);
+  indexAdd(product);
   return product;
 };
 
@@ -203,8 +229,10 @@ const update = (id, patch) => {
     bySku.set(patch.sku, product);
   }
 
+  indexRemove(product);
   const { id: _id, createdAt: _createdAt, ...allowed } = patch;
   Object.assign(product, allowed);
+  indexAdd(product);
   return product;
 };
 
@@ -222,6 +250,7 @@ const update = (id, patch) => {
 const deleteById = (id) => {
   const product = byId.get(id);
   if (!product || product.archivedAt !== null) return null;
+  indexRemove(product);
   product.archivedAt = new Date();
   return product;
 };
@@ -240,6 +269,7 @@ const restore = (id) => {
   const product = byId.get(id);
   if (!product || product.archivedAt === null) return null;
   product.archivedAt = null;
+  indexAdd(product);
   return product;
 };
 
@@ -251,8 +281,44 @@ const restore = (id) => {
  *
  * @returns {void}
  */
-const _reset = () => { byId.clear(); bySku.clear(); };
+const _reset = () => { byId.clear(); bySku.clear(); byCategory.clear(); byStatus.clear(); };
 
-export default { findAll, findById, findBySku, create, update, delete: deleteById, restore, _reset };
+const validateBulkItems = (items) => {
+  const allErrors = [];
+  let hasFieldErrors = false;
+  const seenSkus = new Map();
+
+  items.forEach((item, i) => {
+    const fieldErrs = validate(item, true);
+    if (fieldErrs.length) {
+      hasFieldErrors = true;
+      fieldErrs.forEach(e => allErrors.push(`[${i}]: ${e}`));
+    }
+    if (item.sku) {
+      if (seenSkus.has(item.sku)) {
+        allErrors.push(`[${i}]: SKU '${item.sku}' already exists`);
+      } else {
+        seenSkus.set(item.sku, i);
+        if (bySku.has(item.sku)) {
+          allErrors.push(`[${i}]: SKU '${item.sku}' already exists`);
+        }
+      }
+    }
+  });
+
+  return { allErrors, hasFieldErrors };
+};
+
+const createBulk = (items) => {
+  const { allErrors, hasFieldErrors } = validateBulkItems(items);
+  if (allErrors.length) {
+    const err = new Error(allErrors.join('; '));
+    err.status = hasFieldErrors ? 422 : 409;
+    throw err;
+  }
+  return items.map(item => create(item));
+};
+
+export default { findAll, findById, findBySku, create, createBulk, update, delete: deleteById, restore, _reset };
 
 // End of product model

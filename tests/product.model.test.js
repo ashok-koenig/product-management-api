@@ -239,3 +239,173 @@ describe('restore(id)', () => {
     assert.equal(result, null);
   });
 });
+
+// ---------------------------------------------------------------------------
+// category index
+// ---------------------------------------------------------------------------
+describe('category index', () => {
+  it('findAll({ category }) returns only products in that bucket', () => {
+    Product.create({ name: 'Phone', sku: 'IDX-PH', price: 299.99, category: 'electronics' });
+    Product.create({ name: 'Shirt', sku: 'IDX-SH', price: 19.99,  category: 'clothing' });
+    Product.create({ name: 'Book',  sku: 'IDX-BK', price: 9.99                           });
+
+    const results = Product.findAll({ category: 'electronics' });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].sku, 'IDX-PH');
+  });
+
+  it('returns empty array for a category with no products', () => {
+    Product.create({ name: 'Phone', sku: 'IDX-PH2', price: 9.99, category: 'electronics' });
+    assert.deepEqual(Product.findAll({ category: 'food' }), []);
+  });
+
+  it('product moves between category buckets after a category patch', () => {
+    const p = Product.create({ name: 'Gadget', sku: 'IDX-GD', price: 49.99, category: 'electronics' });
+    Product.update(p.id, { category: 'other' });
+
+    assert.deepEqual(Product.findAll({ category: 'electronics' }), []);
+    const results = Product.findAll({ category: 'other' });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].sku, 'IDX-GD');
+  });
+
+  it('archived product is removed from category index', () => {
+    const p = Product.create({ name: 'Cam', sku: 'IDX-CM', price: 99.99, category: 'electronics' });
+    Product.delete(p.id);
+    assert.deepEqual(Product.findAll({ category: 'electronics' }), []);
+  });
+
+  it('restored product is re-added to category index', () => {
+    const p = Product.create({ name: 'Cam', sku: 'IDX-CM2', price: 99.99, category: 'electronics' });
+    Product.delete(p.id);
+    Product.restore(p.id);
+    const results = Product.findAll({ category: 'electronics' });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].sku, 'IDX-CM2');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// status index
+// ---------------------------------------------------------------------------
+describe('status index', () => {
+  it('findAll({ status }) returns only products with that status', () => {
+    Product.create({ name: 'Active',  sku: 'IDX-A', price: 10.00, status: 'active' });
+    Product.create({ name: 'Inactive', sku: 'IDX-I', price: 10.00, status: 'inactive' });
+
+    const results = Product.findAll({ status: 'inactive' });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].sku, 'IDX-I');
+  });
+
+  it('returns empty array for a status with no products', () => {
+    Product.create({ name: 'Active', sku: 'IDX-A2', price: 10.00, status: 'active' });
+    assert.deepEqual(Product.findAll({ status: 'discontinued' }), []);
+  });
+
+  it('product moves between status buckets after a status patch', () => {
+    const p = Product.create({ name: 'Item', sku: 'IDX-IT', price: 10.00, status: 'active' });
+    Product.update(p.id, { status: 'discontinued' });
+
+    assert.deepEqual(Product.findAll({ status: 'active' }), []);
+    const results = Product.findAll({ status: 'discontinued' });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].sku, 'IDX-IT');
+  });
+
+  it('archived product is removed from status index', () => {
+    const p = Product.create({ name: 'Item', sku: 'IDX-IT2', price: 10.00, status: 'active' });
+    Product.delete(p.id);
+    assert.deepEqual(Product.findAll({ status: 'active' }), []);
+  });
+
+  it('restored product is re-added to status index', () => {
+    const p = Product.create({ name: 'Item', sku: 'IDX-IT3', price: 10.00, status: 'active' });
+    Product.delete(p.id);
+    Product.restore(p.id);
+    const results = Product.findAll({ status: 'active' });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].sku, 'IDX-IT3');
+  });
+
+  it('combined category + status filters intersect correctly', () => {
+    Product.create({ name: 'E-Active',   sku: 'IDX-EA', price: 10.00, category: 'electronics', status: 'active' });
+    Product.create({ name: 'E-Inactive', sku: 'IDX-EI', price: 10.00, category: 'electronics', status: 'inactive' });
+    Product.create({ name: 'C-Active',   sku: 'IDX-CA', price: 10.00, category: 'clothing',    status: 'active' });
+
+    const results = Product.findAll({ category: 'electronics', status: 'active' });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].sku, 'IDX-EA');
+  });
+});
+
+describe('createBulk()', () => {
+  it('returns array of created products for a valid batch', () => {
+    const results = Product.createBulk([
+      { name: 'Alpha', sku: 'BLK-A', price: 10.00 },
+      { name: 'Beta',  sku: 'BLK-B', price: 20.00 },
+    ]);
+    assert.equal(results.length, 2);
+    assert.ok(results[0].id);
+    assert.equal(results[0].sku, 'BLK-A');
+    assert.ok(results[1].id);
+    assert.equal(results[1].sku, 'BLK-B');
+  });
+
+  it('applies defaults (status active, archivedAt null)', () => {
+    const [p] = Product.createBulk([{ name: 'X', sku: 'BLK-X' }]);
+    assert.equal(p.status, 'active');
+    assert.equal(p.archivedAt, null);
+    assert.equal(p.stock, 0);
+  });
+
+  it('throws 422 when any item is missing a required field', () => {
+    assert.throws(
+      () => Product.createBulk([
+        { name: 'Good', sku: 'BLK-G1', price: 5.00 },
+        { sku: 'BLK-G2', price: 5.00 },
+      ]),
+      { status: 422 }
+    );
+  });
+
+  it('throws 409 when any item SKU conflicts with the store', () => {
+    Product.create({ name: 'Existing', sku: 'EXIST-1', price: 1.00 });
+    assert.throws(
+      () => Product.createBulk([
+        { name: 'New', sku: 'BLK-N1', price: 5.00 },
+        { name: 'Clash', sku: 'EXIST-1', price: 5.00 },
+      ]),
+      { status: 409 }
+    );
+  });
+
+  it('throws 409 for intra-batch duplicate SKU', () => {
+    assert.throws(
+      () => Product.createBulk([
+        { name: 'First',  sku: 'DUP-1', price: 5.00 },
+        { name: 'Second', sku: 'DUP-1', price: 10.00 },
+      ]),
+      { status: 409 }
+    );
+  });
+
+  it('store remains empty after a failed createBulk', () => {
+    try {
+      Product.createBulk([
+        { name: 'Good', sku: 'BLK-OK', price: 5.00 },
+        { sku: 'BLK-BAD' },
+      ]);
+    } catch (_) { /* expected */ }
+    assert.deepEqual(Product.findAll({}), []);
+  });
+
+  it('error message contains index prefixes', () => {
+    let caught;
+    try {
+      Product.createBulk([{ sku: 'BLK-1' }, { sku: 'BLK-2' }]);
+    } catch (e) { caught = e; }
+    assert.ok(caught.message.includes('[0]:'));
+    assert.ok(caught.message.includes('[1]:'));
+  });
+});
