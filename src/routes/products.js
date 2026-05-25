@@ -3,21 +3,24 @@ import {
   getProducts,
   getProductById,
   createProduct,
+  createBulkProducts,
   updateProduct,
+  bulkUpdateStatus,
   deleteProduct,
   restoreProduct,
-  bulkCreate,
 } from '../controllers/productController.js';
 import {
   validateCreate,
-  validateUpdate,
-  validateFilters,
   validateBulk,
+  validateUpdate,
+  validateBulkStatus,
+  validateFilters,
 } from '../validators/productValidator.js';
 
 const router = Router();
 
-router.post('/bulk', validateBulk, bulkCreate);
+router.post('/bulk', validateBulk, createBulkProducts);
+router.patch('/bulk-status', validateBulkStatus, bulkUpdateStatus);
 router.get('/', validateFilters, getProducts);
 router.get('/:id', getProductById);
 router.post('/', validateCreate, createProduct);

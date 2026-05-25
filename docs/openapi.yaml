@@ -205,6 +205,94 @@ paths:
 
   # ---------------------------------------------------------------------------
 
+  /products/bulk-status:
+
+    patch:
+      operationId: bulkUpdateStatus
+      summary: Bulk update product status
+      description: >
+        Updates the `status` field on multiple non-archived products in a single
+        request. All supplied IDs must resolve to existing, non-archived products
+        — if any ID is unknown or belongs to an archived product the entire
+        request fails with 404 and no products are changed. Validation failures
+        produce a 400 before any store access occurs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkStatusInput'
+            example:
+              ids:
+                - d290f1ee-6c54-4b01-90e6-d701748f0851
+                - a1b2c3d4-e5f6-7890-abcd-ef1234567890
+              status: inactive
+
+      responses:
+        '200':
+          description: All products updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductListEnvelope'
+              example:
+                success: true
+                data:
+                  - id: d290f1ee-6c54-4b01-90e6-d701748f0851
+                    name: Wireless Keyboard
+                    sku: WKB-2024-BLK
+                    description: Compact tenkeyless mechanical keyboard
+                    category: electronics
+                    price: 79.99
+                    stock: 150
+                    status: inactive
+                    createdAt: '2024-01-15T09:00:00.000Z'
+                    archivedAt: null
+                error: null
+
+        '400':
+          description: >
+            Request body is empty, ids is not a non-empty array of UUIDs, or
+            status is not a valid lifecycle status value.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                emptyBody:
+                  summary: Empty request body
+                  value:
+                    success: false
+                    data: null
+                    error: Request body must not be empty
+                invalidStatus:
+                  summary: Invalid status value
+                  value:
+                    success: false
+                    data: null
+                    error: "status must be one of: active, inactive, discontinued"
+                invalidIds:
+                  summary: Non-UUID in ids array
+                  value:
+                    success: false
+                    data: null
+                    error: each id must be a valid UUID
+
+        '404':
+          description: >
+            One or more supplied IDs do not exist or belong to archived products.
+            No products are updated when this error occurs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data: null
+                error: "Products not found: d290f1ee-6c54-4b01-90e6-d701748f0851"
+
+  # ---------------------------------------------------------------------------
+
   /products/{id}:
 
     parameters:
@@ -578,6 +666,37 @@ components:
           description: Lifecycle status. Defaults to "active" when omitted.
           default: active
           example: active
+
+    # -------------------------------------------------------------------------
+    # BulkStatusInput — request body for PATCH /products/bulk-status
+    # -------------------------------------------------------------------------
+    BulkStatusInput:
+      type: object
+      description: >
+        Request body for the bulk status update endpoint. Both fields are
+        required. All IDs must be valid UUIDs referencing non-archived products.
+      required:
+        - ids
+        - status
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+          description: >
+            Array of product UUIDs whose status will be updated. Must contain
+            at least one entry. All IDs must resolve to existing, non-archived
+            products or the entire request will be rejected with 404.
+          example:
+            - d290f1ee-6c54-4b01-90e6-d701748f0851
+            - a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        status:
+          type: string
+          enum: [active, inactive, discontinued]
+          description: The lifecycle status to apply to all matched products.
+          example: inactive
 
     # -------------------------------------------------------------------------
     # ProductPatch — accepted fields for PATCH /products/{id}

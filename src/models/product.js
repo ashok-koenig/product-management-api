@@ -7,6 +7,23 @@ const VALID_STATUSES = ['active', 'inactive', 'discontinued'];
 const byId = new Map();
 // Secondary index: sku → product object (includes archived — SKUs stay reserved)
 const bySku = new Map();
+// Filter indexes: non-archived products only; updated on every write
+const byCategory = new Map(); // category string → Set<product>
+const byStatus = new Map();   // status string → Set<product>
+
+const indexAdd = (product) => {
+  if (product.category !== null) {
+    if (!byCategory.has(product.category)) byCategory.set(product.category, new Set());
+    byCategory.get(product.category).add(product);
+  }
+  if (!byStatus.has(product.status)) byStatus.set(product.status, new Set());
+  byStatus.get(product.status).add(product);
+};
+
+const indexRemove = (product) => {
+  byCategory.get(product.category)?.delete(product);
+  byStatus.get(product.status)?.delete(product);
+};
 
 const validate = (data, requireAll = true) => {
   const errors = [];
@@ -44,7 +61,10 @@ const validate = (data, requireAll = true) => {
  * Products whose `archivedAt` timestamp is non-null are always excluded, so
  * soft-deleted entries are invisible to callers of this function.
  * All string comparisons are case-insensitive. Price bounds are inclusive.
- * Single-pass O(n) scan — conditions evaluated cheapest-first.
+ * Uses byCategory / byStatus indexes when those filters are present, reducing
+ * the iterated set to products in that bucket. Remaining filters (price, stock,
+ * search) are applied in-loop. Falls back to full byId scan when neither index
+ * filter is active.
  *
  * @param {object} [filters={}] - Optional filter criteria; omit to return all active products.
  * @param {string}  [filters.search]   - Substring matched against `name` and `description`.
@@ -57,9 +77,14 @@ const validate = (data, requireAll = true) => {
  */
 const findAll = (filters = {}) => {
   const q = filters.search ? filters.search.toLowerCase() : null;
+  const source = filters.category
+    ? (byCategory.get(filters.category) ?? [])
+    : filters.status
+      ? (byStatus.get(filters.status) ?? [])
+      : byId.values();
   const results = [];
 
-  for (const p of byId.values()) {
+  for (const p of source) {
     if (p.archivedAt !== null) continue;
     if (filters.category && p.category !== filters.category) continue;
     if (filters.status && p.status !== filters.status) continue;
@@ -155,6 +180,7 @@ const create = (data) => {
 
   byId.set(product.id, product);
   bySku.set(product.sku, product);
+  indexAdd(product);
   return product;
 };
 
@@ -203,8 +229,10 @@ const update = (id, patch) => {
     bySku.set(patch.sku, product);
   }
 
+  indexRemove(product);
   const { id: _id, createdAt: _createdAt, ...allowed } = patch;
   Object.assign(product, allowed);
+  indexAdd(product);
   return product;
 };
 
@@ -222,6 +250,7 @@ const update = (id, patch) => {
 const deleteById = (id) => {
   const product = byId.get(id);
   if (!product || product.archivedAt !== null) return null;
+  indexRemove(product);
   product.archivedAt = new Date();
   return product;
 };
@@ -240,6 +269,7 @@ const restore = (id) => {
   const product = byId.get(id);
   if (!product || product.archivedAt === null) return null;
   product.archivedAt = null;
+  indexAdd(product);
   return product;
 };
 
@@ -251,64 +281,70 @@ const restore = (id) => {
  *
  * @returns {void}
  */
-const _reset = () => { byId.clear(); bySku.clear(); };
+const _reset = () => { byId.clear(); bySku.clear(); byCategory.clear(); byStatus.clear(); };
 
-/**
- * Creates many products atomically. Validates the entire batch before any
- * write; if any item fails validation, duplicates another item's SKU within
- * the batch, or collides with an existing SKU in the store, the whole batch
- * is rejected and no products are persisted.
- *
- * @param {object[]} products - Array of product input objects (same shape as `create`).
- * @returns {object[]} Newly created product objects, in input order.
- * @throws {Error} 422 — when any item fails validation or any SKU conflict is detected.
- *   The thrown error carries a `.details` array describing each offending item.
- */
-const bulkCreate = (products) => {
-  const details = [];
-  const seenSkus = new Set();
+const validateBulkItems = (items) => {
+  const allErrors = [];
+  let hasFieldErrors = false;
+  const seenSkus = new Map();
 
-  products.forEach((item, index) => {
-    const errors = validate(item, true);
-    if (errors.length) {
-      details.push({ index, sku: item?.sku ?? null, error: errors.join('; ') });
-      return;
+  items.forEach((item, i) => {
+    const fieldErrs = validate(item, true);
+    if (fieldErrs.length) {
+      hasFieldErrors = true;
+      fieldErrs.forEach(e => allErrors.push(`[${i}]: ${e}`));
     }
-    if (seenSkus.has(item.sku)) {
-      details.push({ index, sku: item.sku, error: `duplicate SKU '${item.sku}' within batch` });
-      return;
+    if (item.sku) {
+      if (seenSkus.has(item.sku)) {
+        allErrors.push(`[${i}]: SKU '${item.sku}' already exists`);
+      } else {
+        seenSkus.set(item.sku, i);
+        if (bySku.has(item.sku)) {
+          allErrors.push(`[${i}]: SKU '${item.sku}' already exists`);
+        }
+      }
     }
-    if (bySku.has(item.sku)) {
-      details.push({ index, sku: item.sku, error: `SKU '${item.sku}' already exists` });
-      return;
-    }
-    seenSkus.add(item.sku);
   });
 
-  if (details.length) {
-    const err = new Error('Bulk import rejected: one or more products failed validation or SKU conflict');
-    err.status = 422;
-    err.details = details;
-    throw err;
-  }
-
-  return products.map((data) => {
-    const product = {
-      id: uuidv4(),
-      name: data.name,
-      sku: data.sku,
-      description: data.description ?? null,
-      category: data.category ?? null,
-      price: data.price ?? null,
-      stock: data.stock ?? 0,
-      status: data.status ?? 'active',
-      createdAt: new Date(),
-      archivedAt: null,
-    };
-    byId.set(product.id, product);
-    bySku.set(product.sku, product);
-    return product;
-  });
+  return { allErrors, hasFieldErrors };
 };
 
-export default { findAll, findById, findBySku, create, update, delete: deleteById, restore, bulkCreate, _reset };
+const createBulk = (items) => {
+  const { allErrors, hasFieldErrors } = validateBulkItems(items);
+  if (allErrors.length) {
+    const err = new Error(allErrors.join('; '));
+    err.status = hasFieldErrors ? 422 : 409;
+    throw err;
+  }
+  return items.map(item => create(item));
+};
+
+/**
+ * Updates the `status` field on multiple non-archived products in one operation.
+ *
+ * All IDs are resolved before any mutation — if any ID is unknown or belongs to
+ * an archived product, the function returns early with a populated `notFound`
+ * array and no products are changed.
+ *
+ * @param {string[]} ids    - Array of product UUIDs to update.
+ * @param {string}   status - New lifecycle status (active | inactive | discontinued).
+ * @returns {{ updated: object[], notFound: string[] }}
+ */
+const bulkUpdateStatus = (ids, status) => {
+  const notFound = ids.filter(id => {
+    const p = byId.get(id);
+    return !p || p.archivedAt !== null;
+  });
+  if (notFound.length) return { updated: [], notFound };
+
+  const updated = ids.map(id => {
+    const product = byId.get(id);
+    indexRemove(product);
+    product.status = status;
+    indexAdd(product);
+    return product;
+  });
+  return { updated, notFound: [] };
+};
+
+export default { findAll, findById, findBySku, create, createBulk, update, delete: deleteById, restore, bulkUpdateStatus, _reset };

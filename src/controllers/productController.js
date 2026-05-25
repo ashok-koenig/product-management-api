@@ -80,6 +80,11 @@ export const createProduct = catchAsync((req, res) => {
   res.status(201).json({ success: true, data: product, error: null });
 });
 
+export const createBulkProducts = catchAsync((req, res) => {
+  const products = Product.createBulk(req.body);
+  res.status(201).json({ success: true, data: products, error: null });
+});
+
 /**
  * Partially updates an existing, non-archived product (PATCH semantics).
  *
@@ -100,6 +105,34 @@ export const createProduct = catchAsync((req, res) => {
  *   - `404 Not Found`    — product does not exist or is archived; forwarded via `next(err)`.
  *   - `409 Conflict`     — `sku` change conflicts with an existing SKU (if `sku` were ever added to `PATCH_ALLOWED`).
  */
+/**
+ * Updates the `status` field on multiple non-archived products in a single request.
+ *
+ * All IDs must resolve to existing, non-archived products — if any are unknown
+ * or archived the request fails with 404 and no products are changed.
+ *
+ * @param {import("express").Request}  req       - Express request object.
+ * @param {string[]} req.body.ids                - Array of product UUIDs to update.
+ * @param {string}   req.body.status             - New lifecycle status.
+ * @param {import("express").Response}  res      - Express response object.
+ * @param {import("express").NextFunction} next  - Express next middleware function.
+ *
+ * @returns {void} Responds with:
+ *   - `200 OK`          — `{ success: true, data: Product[], error: null }`
+ *   - `400 Bad Request`  — ids or status failed validation.
+ *   - `404 Not Found`    — one or more IDs do not exist or are archived.
+ */
+export const bulkUpdateStatus = catchAsync((req, res, next) => {
+  const { ids, status } = req.body;
+  const { updated, notFound } = Product.bulkUpdateStatus(ids, status);
+  if (notFound.length) {
+    const err = new Error(`Products not found: ${notFound.join(', ')}`);
+    err.status = 404;
+    return next(err);
+  }
+  res.json({ success: true, data: updated, error: null });
+});
+
 export const updateProduct = catchAsync((req, res, next) => {
   const patch = Object.fromEntries(
     Object.entries(req.body).filter(([k]) => PATCH_ALLOWED.has(k))
@@ -167,52 +200,3 @@ export const restoreProduct = catchAsync((req, res, next) => {
   res.json({ success: true, data: product, error: null });
 });
 
-const BULK_ALLOWED = new Set(['name', 'sku', 'description', 'category', 'price', 'stock', 'status']);
-const MAX_BULK_SIZE = 100;
-
-/**
- * Creates many products in a single atomic batch. Validation and SKU-conflict
- * checks run across the whole batch before any product is written. On any
- * failure no products are persisted.
- *
- * @returns {void} Responds with:
- *   - `201 Created`        — `{ success: true, data: { created, products }, error: null }`
- *   - `400 Bad Request`    — batch exceeds the maximum allowed size.
- *   - `422 Unprocessable`  — validation failure or SKU conflict; body carries `details`.
- */
-export const bulkCreate = catchAsync((req, res, next) => {
-  const items = Array.isArray(req.body?.products) ? req.body.products : [];
-
-  if (items.length > MAX_BULK_SIZE) {
-    return res.status(400).json({
-      success: false,
-      data: null,
-      error: `Bulk import exceeds maximum batch size of ${MAX_BULK_SIZE}`,
-    });
-  }
-
-  const sanitised = items.map((item) =>
-    Object.fromEntries(Object.entries(item ?? {}).filter(([k]) => BULK_ALLOWED.has(k)))
-  );
-
-  try {
-    const products = Product.bulkCreate(sanitised);
-    return res.status(201).json({
-      success: true,
-      data: { created: products.length, products },
-      error: null,
-    });
-  } catch (err) {
-    if (err.status === 422 && Array.isArray(err.details)) {
-      return res.status(422).json({
-        success: false,
-        data: null,
-        error: err.message,
-        details: err.details,
-      });
-    }
-    return next(err);
-  }
-});
-
-// End of Product Controller

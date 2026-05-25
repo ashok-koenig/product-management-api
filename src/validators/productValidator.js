@@ -78,49 +78,53 @@ export const validateUpdate = [
 ];
 
 export const validateBulk = [
-  body('products')
-    .exists().withMessage('products is required')
-    .bail()
-    .isArray({ min: 1, max: 100 })
-    .withMessage('products must be an array of 1 to 100 items'),
-  body('products.*.name')
-    .exists().withMessage('name is required')
-    .bail()
-    .isString().notEmpty().withMessage('name is required'),
-  body('products.*.sku')
-    .exists().withMessage('sku is required')
-    .bail()
-    .matches(/^[A-Z0-9-]{3,20}$/)
-    .withMessage('sku must match /^[A-Z0-9-]{3,20}$/'),
-  body('products.*.category')
-    .exists().withMessage('category is required')
-    .bail()
+  body().isArray({ min: 1 }).withMessage('body must be a non-empty array'),
+  body('*.name').notEmpty().withMessage('name is required'),
+  body('*.sku')
+    .notEmpty().withMessage('sku is required')
+    .matches(/^[A-Za-z0-9-]+$/).withMessage('sku must contain only letters, numbers, and hyphens'),
+  body('*.description').optional().isString(),
+  body('*.category')
+    .optional()
     .isIn(VALID_CATEGORIES)
     .withMessage(`category must be one of: ${VALID_CATEGORIES.join(', ')}`),
-  body('products.*.price')
-    .exists().withMessage('price is required')
-    .bail()
+  body('*.price')
+    .optional()
     .custom(val => {
       if (typeof val !== 'number' || val <= 0 || Math.round(val * 100) / 100 !== val) {
         throw new Error('price must be a positive number with up to 2 decimal places');
       }
       return true;
     }),
-  body('products.*.stock')
-    .exists().withMessage('stock is required')
-    .bail()
+  body('*.stock')
+    .optional()
     .custom(val => {
       if (!Number.isInteger(val) || val < 0) {
         throw new Error('stock must be a non-negative integer');
       }
       return true;
     }),
-  body('products.*.description').optional().isString(),
-  body('products.*.status')
+  body('*.status')
     .optional()
     .isIn(VALID_STATUSES)
     .withMessage(`status must be one of: ${VALID_STATUSES.join(', ')}`),
   collectErrors(422),
+];
+
+export const validateBulkStatus = [
+  requireNonEmptyBody,
+  body('ids')
+    .isArray({ min: 1 })
+    .withMessage('ids must be a non-empty array'),
+  body('ids.*')
+    .isUUID()
+    .withMessage('each id must be a valid UUID'),
+  body('status')
+    .notEmpty()
+    .withMessage('status is required')
+    .isIn(VALID_STATUSES)
+    .withMessage(`status must be one of: ${VALID_STATUSES.join(', ')}`),
+  collectErrors(400),
 ];
 
 export const validateFilters = [
