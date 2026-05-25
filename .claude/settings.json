@@ -1,0 +1,75 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|compact",
+        "hooks": [
+          {
+            "type":          "command",
+            "command":       "node",
+            "args":          ["${CLAUDE_PROJECT_DIR}/.claude/hooks/session-context.mjs"],
+            "statusMessage": "Loading project context..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+        {
+            "hooks": [
+            {
+                "type":    "command",
+                "command": "node",
+                "args":    ["${CLAUDE_PROJECT_DIR}/.claude/hooks/validate-prompt.mjs"]
+            }
+            ]
+        }
+    ],
+    "PreToolUse": [
+        {
+            "matcher": "Edit|Write|MultiEdit",
+            "hooks": [
+            {
+                "type":    "command",
+                "command": "node",
+                "args":    ["${CLAUDE_PROJECT_DIR}/.claude/hooks/protect-files.mjs"]
+            }
+            ]
+        },
+        {
+            "matcher": "Bash",
+            "hooks": [
+            { "type": "command", "command": "node",
+                "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/bash-guard.mjs"],
+                "statusMessage": "Checking command safety..." }
+            ]
+        }
+    ],
+    "PostToolUse": [
+        {
+            "matcher": "Edit|Write|MultiEdit",
+            "hooks": [
+                { "type": "command", "command": "node",
+                    "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/format-on-save.mjs"],
+                    "statusMessage": "Formatting..." },
+                { "type": "command", "command": "node",
+                    "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/audit-log.mjs"],
+                    "async": true }
+            ]
+        }
+    ],
+    "Stop": [
+        {
+            "hooks": [
+            {
+                "type":    "command",
+                "command": "node",
+                "args":    ["${CLAUDE_PROJECT_DIR}/.claude/hooks/test-reminder.mjs"]
+            }
+            ]
+        }
+    ]
+
+
+
+  }
+}
