@@ -253,4 +253,62 @@ const restore = (id) => {
  */
 const _reset = () => { byId.clear(); bySku.clear(); };
 
-export default { findAll, findById, findBySku, create, update, delete: deleteById, restore, _reset };
+/**
+ * Creates many products atomically. Validates the entire batch before any
+ * write; if any item fails validation, duplicates another item's SKU within
+ * the batch, or collides with an existing SKU in the store, the whole batch
+ * is rejected and no products are persisted.
+ *
+ * @param {object[]} products - Array of product input objects (same shape as `create`).
+ * @returns {object[]} Newly created product objects, in input order.
+ * @throws {Error} 422 — when any item fails validation or any SKU conflict is detected.
+ *   The thrown error carries a `.details` array describing each offending item.
+ */
+const bulkCreate = (products) => {
+  const details = [];
+  const seenSkus = new Set();
+
+  products.forEach((item, index) => {
+    const errors = validate(item, true);
+    if (errors.length) {
+      details.push({ index, sku: item?.sku ?? null, error: errors.join('; ') });
+      return;
+    }
+    if (seenSkus.has(item.sku)) {
+      details.push({ index, sku: item.sku, error: `duplicate SKU '${item.sku}' within batch` });
+      return;
+    }
+    if (bySku.has(item.sku)) {
+      details.push({ index, sku: item.sku, error: `SKU '${item.sku}' already exists` });
+      return;
+    }
+    seenSkus.add(item.sku);
+  });
+
+  if (details.length) {
+    const err = new Error('Bulk import rejected: one or more products failed validation or SKU conflict');
+    err.status = 422;
+    err.details = details;
+    throw err;
+  }
+
+  return products.map((data) => {
+    const product = {
+      id: uuidv4(),
+      name: data.name,
+      sku: data.sku,
+      description: data.description ?? null,
+      category: data.category ?? null,
+      price: data.price ?? null,
+      stock: data.stock ?? 0,
+      status: data.status ?? 'active',
+      createdAt: new Date(),
+      archivedAt: null,
+    };
+    byId.set(product.id, product);
+    bySku.set(product.sku, product);
+    return product;
+  });
+};
+
+export default { findAll, findById, findBySku, create, update, delete: deleteById, restore, bulkCreate, _reset };

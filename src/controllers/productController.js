@@ -167,4 +167,52 @@ export const restoreProduct = catchAsync((req, res, next) => {
   res.json({ success: true, data: product, error: null });
 });
 
+const BULK_ALLOWED = new Set(['name', 'sku', 'description', 'category', 'price', 'stock', 'status']);
+const MAX_BULK_SIZE = 100;
+
+/**
+ * Creates many products in a single atomic batch. Validation and SKU-conflict
+ * checks run across the whole batch before any product is written. On any
+ * failure no products are persisted.
+ *
+ * @returns {void} Responds with:
+ *   - `201 Created`        — `{ success: true, data: { created, products }, error: null }`
+ *   - `400 Bad Request`    — batch exceeds the maximum allowed size.
+ *   - `422 Unprocessable`  — validation failure or SKU conflict; body carries `details`.
+ */
+export const bulkCreate = catchAsync((req, res, next) => {
+  const items = Array.isArray(req.body?.products) ? req.body.products : [];
+
+  if (items.length > MAX_BULK_SIZE) {
+    return res.status(400).json({
+      success: false,
+      data: null,
+      error: `Bulk import exceeds maximum batch size of ${MAX_BULK_SIZE}`,
+    });
+  }
+
+  const sanitised = items.map((item) =>
+    Object.fromEntries(Object.entries(item ?? {}).filter(([k]) => BULK_ALLOWED.has(k)))
+  );
+
+  try {
+    const products = Product.bulkCreate(sanitised);
+    return res.status(201).json({
+      success: true,
+      data: { created: products.length, products },
+      error: null,
+    });
+  } catch (err) {
+    if (err.status === 422 && Array.isArray(err.details)) {
+      return res.status(422).json({
+        success: false,
+        data: null,
+        error: err.message,
+        details: err.details,
+      });
+    }
+    return next(err);
+  }
+});
+
 // End of Product Controller

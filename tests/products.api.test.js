@@ -359,3 +359,115 @@ describe('DELETE /products/:id/restore — never-archived edge case', () => {
     assert.equal(res.body.success, false);
   });
 });
+
+describe('POST /products/bulk', () => {
+  beforeEach(() => Product._reset());
+
+  const validItem = (sku, overrides = {}) => ({
+    name: `Bulk Item ${sku}`,
+    sku,
+    description: `Description for ${sku}`,
+    category: 'electronics',
+    price: 19.99,
+    stock: 5,
+    ...overrides,
+  });
+
+  it('creates a valid batch of multiple products and returns 201', async () => {
+    const products = [
+      validItem('BULK-001', { category: 'electronics', price: 99.99, stock: 10 }),
+      validItem('BULK-002', { category: 'clothing', price: 29.50, stock: 25 }),
+      validItem('BULK-003', { category: 'books', price: 14.95, stock: 0 }),
+    ];
+    const res = await agent.post('/products/bulk').send({ products });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.error, null);
+    assert.equal(res.body.data.created, 3);
+    assert.ok(Array.isArray(res.body.data.products));
+    assert.equal(res.body.data.products.length, 3);
+    const skus = res.body.data.products.map(p => p.sku);
+    assert.deepEqual(skus, ['BULK-001', 'BULK-002', 'BULK-003']);
+    assert.ok(res.body.data.products.every(p => p.id && p.createdAt));
+
+    const listRes = await agent.get('/products');
+    const listedSkus = listRes.body.data.map(p => p.sku);
+    assert.ok(skus.every(s => listedSkus.includes(s)));
+  });
+
+  it('rejects the entire batch when one product has an invalid field (422, nothing persisted)', async () => {
+    const products = [
+      validItem('VALID-001'),
+      validItem('BAD-PRICE', { price: -5 }),
+      validItem('VALID-002'),
+    ];
+    const res = await agent.post('/products/bulk').send({ products });
+    assert.equal(res.status, 422);
+    assert.equal(res.body.success, false);
+    assert.equal(res.body.data, null);
+    assert.ok(typeof res.body.error === 'string');
+
+    const listRes = await agent.get('/products');
+    assert.equal(listRes.body.data.length, 0, 'no products should have been persisted');
+  });
+
+  it('rejects a batch containing duplicate SKUs within the same request (422)', async () => {
+    const products = [
+      validItem('DUP-001'),
+      validItem('DUP-002'),
+      validItem('DUP-001', { name: 'Duplicate Sku Item' }),
+    ];
+    const res = await agent.post('/products/bulk').send({ products });
+    assert.equal(res.status, 422);
+    assert.equal(res.body.success, false);
+    assert.equal(res.body.data, null);
+
+    const listRes = await agent.get('/products');
+    assert.equal(listRes.body.data.length, 0, 'no products should have been persisted');
+  });
+
+  it('rejects a batch containing a SKU that already exists in the store (422)', async () => {
+    const existing = await agent.post('/products').send({
+      name: 'Existing Product',
+      sku: 'EXIST-001',
+      category: 'electronics',
+      price: 49.99,
+      stock: 5,
+    });
+    assert.equal(existing.status, 201);
+
+    const products = [
+      validItem('NEW-001'),
+      validItem('EXIST-001'),
+    ];
+    const res = await agent.post('/products/bulk').send({ products });
+    assert.equal(res.status, 422);
+    assert.equal(res.body.success, false);
+    assert.equal(res.body.data, null);
+
+    const listRes = await agent.get('/products');
+    const skus = listRes.body.data.map(p => p.sku);
+    assert.deepEqual(skus, ['EXIST-001'], 'only the originally created product should be present');
+  });
+
+  it('rejects a batch exceeding 100 items', async () => {
+    const products = Array.from({ length: 101 }, (_, i) =>
+      validItem(`OVER-${String(i).padStart(3, '0')}`)
+    );
+    const res = await agent.post('/products/bulk').send({ products });
+    assert.ok(res.status === 400 || res.status === 422,
+      `expected 400 or 422 for >100 items, got ${res.status}`);
+    assert.equal(res.body.success, false);
+    assert.equal(res.body.data, null);
+
+    const listRes = await agent.get('/products');
+    assert.equal(listRes.body.data.length, 0, 'no products should have been persisted');
+  });
+
+  it('rejects an empty products array with 422', async () => {
+    const res = await agent.post('/products/bulk').send({ products: [] });
+    assert.equal(res.status, 422);
+    assert.equal(res.body.success, false);
+    assert.equal(res.body.data, null);
+  });
+});

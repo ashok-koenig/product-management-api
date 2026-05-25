@@ -77,6 +77,52 @@ export const validateUpdate = [
   collectErrors(400),
 ];
 
+export const validateBulk = [
+  body('products')
+    .exists().withMessage('products is required')
+    .bail()
+    .isArray({ min: 1, max: 100 })
+    .withMessage('products must be an array of 1 to 100 items'),
+  body('products.*.name')
+    .exists().withMessage('name is required')
+    .bail()
+    .isString().notEmpty().withMessage('name is required'),
+  body('products.*.sku')
+    .exists().withMessage('sku is required')
+    .bail()
+    .matches(/^[A-Z0-9-]{3,20}$/)
+    .withMessage('sku must match /^[A-Z0-9-]{3,20}$/'),
+  body('products.*.category')
+    .exists().withMessage('category is required')
+    .bail()
+    .isIn(VALID_CATEGORIES)
+    .withMessage(`category must be one of: ${VALID_CATEGORIES.join(', ')}`),
+  body('products.*.price')
+    .exists().withMessage('price is required')
+    .bail()
+    .custom(val => {
+      if (typeof val !== 'number' || val <= 0 || Math.round(val * 100) / 100 !== val) {
+        throw new Error('price must be a positive number with up to 2 decimal places');
+      }
+      return true;
+    }),
+  body('products.*.stock')
+    .exists().withMessage('stock is required')
+    .bail()
+    .custom(val => {
+      if (!Number.isInteger(val) || val < 0) {
+        throw new Error('stock must be a non-negative integer');
+      }
+      return true;
+    }),
+  body('products.*.description').optional().isString(),
+  body('products.*.status')
+    .optional()
+    .isIn(VALID_STATUSES)
+    .withMessage(`status must be one of: ${VALID_STATUSES.join(', ')}`),
+  collectErrors(422),
+];
+
 export const validateFilters = [
   query('category')
     .optional()
