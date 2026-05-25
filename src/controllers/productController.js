@@ -1,7 +1,22 @@
-import Product from '../models/product.js';
-import catchAsync from '../middleware/catchAsync.js';
+/**
+ * @module productController
+ * @description Express route handlers for the Product Management API.
+ * Covers full CRUD operations, bulk status updates, soft-archive, and restore.
+ * All handlers are wrapped with catchAsync and return the standard
+ * { success, data } / { success, error } response envelope.
+ */
 
-const PATCH_ALLOWED = new Set(['name', 'description', 'category', 'price', 'stock', 'status']);
+import Product from "../models/product.js";
+import catchAsync from "../middleware/catchAsync.js";
+
+const PATCH_ALLOWED = new Set([
+  "name",
+  "description",
+  "category",
+  "price",
+  "stock",
+  "status",
+]);
 
 /**
  * Returns all non-archived products that match the query-string filters.
@@ -28,7 +43,7 @@ export const getProducts = catchAsync((req, res) => {
   const filters = { category, status, search };
   if (minPrice !== undefined) filters.minPrice = parseFloat(minPrice);
   if (maxPrice !== undefined) filters.maxPrice = parseFloat(maxPrice);
-  if (inStock !== undefined) filters.inStock = inStock === 'true';
+  if (inStock !== undefined) filters.inStock = inStock === "true";
   const data = Product.findAll(filters);
   res.json({ success: true, data, error: null });
 });
@@ -51,7 +66,7 @@ export const getProducts = catchAsync((req, res) => {
 export const getProductById = catchAsync((req, res, next) => {
   const product = Product.findById(req.params.id);
   if (!product) {
-    const err = new Error('Product not found');
+    const err = new Error("Product not found");
     err.status = 404;
     return next(err);
   }
@@ -126,7 +141,7 @@ export const bulkUpdateStatus = catchAsync((req, res, next) => {
   const { ids, status } = req.body;
   const { updated, notFound } = Product.bulkUpdateStatus(ids, status);
   if (notFound.length) {
-    const err = new Error(`Products not found: ${notFound.join(', ')}`);
+    const err = new Error(`Products not found: ${notFound.join(", ")}`);
     err.status = 404;
     return next(err);
   }
@@ -135,11 +150,11 @@ export const bulkUpdateStatus = catchAsync((req, res, next) => {
 
 export const updateProduct = catchAsync((req, res, next) => {
   const patch = Object.fromEntries(
-    Object.entries(req.body).filter(([k]) => PATCH_ALLOWED.has(k))
+    Object.entries(req.body).filter(([k]) => PATCH_ALLOWED.has(k)),
   );
   const product = Product.update(req.params.id, patch);
   if (!product) {
-    const err = new Error('Product not found');
+    const err = new Error("Product not found");
     err.status = 404;
     return next(err);
   }
@@ -166,7 +181,7 @@ export const updateProduct = catchAsync((req, res, next) => {
 export const deleteProduct = catchAsync((req, res, next) => {
   const product = Product.delete(req.params.id);
   if (!product) {
-    const err = new Error('Product not found');
+    const err = new Error("Product not found");
     err.status = 404;
     return next(err);
   }
@@ -193,10 +208,9 @@ export const deleteProduct = catchAsync((req, res, next) => {
 export const restoreProduct = catchAsync((req, res, next) => {
   const product = Product.restore(req.params.id);
   if (!product) {
-    const err = new Error('Product not found');
+    const err = new Error("Product not found");
     err.status = 404;
     return next(err);
   }
   res.json({ success: true, data: product, error: null });
 });
-

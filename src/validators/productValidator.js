@@ -171,3 +171,4 @@ export const validateFilters = [
     .withMessage("inStock must be true or false"),
   collectErrors(422),
 ];
+// end of product validation

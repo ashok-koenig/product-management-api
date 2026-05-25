@@ -45,17 +45,25 @@
         }
     ],
     "PostToolUse": [
-        {
-            "matcher": "Edit|Write|MultiEdit",
-            "hooks": [
-                { "type": "command", "command": "node",
-                    "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/format-on-save.mjs"],
-                    "statusMessage": "Formatting..." },
-                { "type": "command", "command": "node",
-                    "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/audit-log.mjs"],
-                    "async": true }
-            ]
-        }
+    {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+        { "type": "command", "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/format-on-save.mjs"],
+            "statusMessage": "Formatting..." },
+        { "type": "command", "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/audit-log.mjs"],
+            "async": true }
+        ]
+    },
+    {
+        "matcher": "Bash",
+        "hooks": [
+        { "type": "command", "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/bash-logger.mjs"],
+            "async": true }
+        ]
+    }
     ],
     "Stop": [
         {
