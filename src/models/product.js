@@ -70,15 +70,27 @@ const validatePatch = (patch) => {
 };
 
 export const findAll = (filters = {}) => {
-  const { category, status } = filters;
+  const { category, status, minPrice, maxPrice, inStock, search } = filters;
+  const searchTerm = search ? search.toLowerCase() : undefined;
+
   return products.filter((product) => {
+    if (product.archivedAt !== null) return false;
     if (category && product.category !== category) return false;
     if (status && product.status !== status) return false;
+    if (minPrice !== undefined && product.price < minPrice) return false;
+    if (maxPrice !== undefined && product.price > maxPrice) return false;
+    if (inStock !== undefined && (product.stock > 0) !== inStock) return false;
+    if (searchTerm) {
+      const name = product.name?.toLowerCase() ?? '';
+      const description = product.description?.toLowerCase() ?? '';
+      if (!name.includes(searchTerm) && !description.includes(searchTerm)) return false;
+    }
     return true;
   });
 };
 
-export const findById = (id) => products.find((product) => product.id === id);
+export const findById = (id) =>
+  products.find((product) => product.id === id && product.archivedAt === null);
 
 export const findBySku = (sku) => products.find((product) => product.sku === sku);
 
@@ -99,6 +111,7 @@ export const create = (data) => {
     stock: data.stock,
     status: data.status ?? 'active',
     createdAt: new Date(),
+    archivedAt: null,
   };
 
   products.push(product);
@@ -117,16 +130,32 @@ export const update = (id, patch) => {
     throw new ApiError(409, `A product with sku "${patch.sku}" already exists`);
   }
 
-  Object.assign(product, patch);
+  const { name, sku, description, category, price, stock, status } = patch;
+  const allowedPatch = { name, sku, description, category, price, stock, status };
+  Object.keys(allowedPatch).forEach((key) => {
+    if (allowedPatch[key] === undefined) delete allowedPatch[key];
+  });
+
+  Object.assign(product, allowedPatch);
   return product;
 };
 
 export const remove = (id) => {
-  const index = products.findIndex((product) => product.id === id);
-  if (index === -1) {
+  const product = findById(id);
+  if (!product) {
     throw new ApiError(404, `Product with id "${id}" not found`);
   }
-  return products.splice(index, 1)[0];
+  product.archivedAt = new Date();
+  return product;
 };
 
-export { remove as delete, ApiError, isUuid, CATEGORIES, STATUSES };
+export const restore = (id) => {
+  const product = products.find((p) => p.id === id && p.archivedAt !== null);
+  if (!product) {
+    throw new ApiError(404, `Product with id "${id}" not found`);
+  }
+  product.archivedAt = null;
+  return product;
+};
+
+export { remove as delete, ApiError, isUuid, isValidPrice, CATEGORIES, STATUSES };

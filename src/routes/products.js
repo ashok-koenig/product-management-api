@@ -5,18 +5,17 @@ import {
   createProduct,
   updateProduct,
   deleteProduct,
+  restoreProduct,
 } from '../controllers/productController.js';
-
-const asyncHandler = (handler) => (req, res, next) => {
-  handler(req, res, next).catch(next);
-};
+import { validateCreate, validateUpdate, validateFilters } from '../validators/productValidator.js';
 
 const router = Router();
 
-router.get('/', asyncHandler(listProducts));
-router.get('/:id', asyncHandler(getProduct));
-router.post('/', asyncHandler(createProduct));
-router.patch('/:id', asyncHandler(updateProduct));
-router.delete('/:id', asyncHandler(deleteProduct));
+router.get('/', validateFilters, listProducts);
+router.get('/:id', getProduct);
+router.post('/', validateCreate, createProduct);
+router.patch('/:id', validateUpdate, updateProduct);
+router.delete('/:id/restore', restoreProduct);
+router.delete('/:id', deleteProduct);
 
 export default router;
