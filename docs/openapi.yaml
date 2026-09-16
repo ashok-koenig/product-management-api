@@ -1,0 +1,448 @@
+openapi: 3.1.0
+info:
+  title: Product Management API
+  version: 1.0.0
+  description: >-
+    REST API for managing a product catalogue, supporting creation, listing,
+    filtering, partial updates, soft-archiving, and restoration of products.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: http://localhost:3000
+security: []
+
+tags:
+  - name: Products
+    description: >-
+      Create, list, filter, update, soft-archive, and restore products in the
+      catalogue. All responses are wrapped in the ApiEnvelope shape:
+      { success, data, error }.
+
+paths:
+  /products:
+    get:
+      summary: List active products
+      operationId: listProducts
+      tags: [Products]
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Category'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Status'
+        - name: minPrice
+          in: query
+          required: false
+          schema:
+            type: number
+            format: double
+          description: Minimum price, inclusive.
+        - name: maxPrice
+          in: query
+          required: false
+          schema:
+            type: number
+            format: double
+          description: Maximum price, inclusive.
+        - name: inStock
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['true', 'false']
+          description: >-
+            When "true", only products with stock > 0 are returned; when
+            "false", only out-of-stock products are returned.
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Case-insensitive substring match against name or description.
+      responses:
+        '200':
+          description: A list of active products matching the given filters.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Product'
+        '422':
+          description: One or more query parameters failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: Create a new product
+      operationId: createProduct
+      tags: [Products]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductInput'
+      responses:
+        '201':
+          description: The product was created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Product'
+        '422':
+          description: One or more fields failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: A product with the given sku already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /products/{id}:
+    get:
+      summary: Get a single active product by id
+      operationId: getProduct
+      tags: [Products]
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: The matching product.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Product'
+        '400':
+          description: id is not a valid UUID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No active product exists with the given id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      summary: Partially update an active product
+      operationId: updateProduct
+      tags: [Products]
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductPatch'
+      responses:
+        '200':
+          description: The updated product.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Product'
+        '400':
+          description: id is not a valid UUID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No active product exists with the given id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: A product with the new sku already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: One or more fields failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: Soft-archive an active product
+      operationId: deleteProduct
+      tags: [Products]
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '204':
+          description: The product was soft-archived. No content is returned.
+        '400':
+          description: id is not a valid UUID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No active product exists with the given id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /products/{id}/restore:
+    delete:
+      summary: Restore a previously soft-archived product
+      operationId: restoreProduct
+      tags: [Products]
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: The restored product.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Product'
+        '400':
+          description: id is not a valid UUID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No archived product exists with the given id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  parameters:
+    ProductId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: The product's UUID.
+
+  schemas:
+    Category:
+      type: string
+      enum: [electronics, clothing, food, books, other]
+
+    Status:
+      type: string
+      enum: [active, inactive, discontinued]
+
+    Product:
+      type: object
+      description: A full product record as stored by the API, including archive state.
+      example:
+        id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        name: Wireless Mouse
+        sku: WM-1001
+        description: Ergonomic 2.4GHz wireless mouse.
+        category: electronics
+        price: 19.99
+        stock: 50
+        status: active
+        createdAt: '2026-09-16T10:00:00.000Z'
+        archivedAt: null
+      required:
+        - id
+        - name
+        - sku
+        - category
+        - price
+        - stock
+        - status
+        - createdAt
+        - archivedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Auto-generated unique product identifier.
+        name:
+          type: string
+          description: Product name.
+        sku:
+          type: string
+          description: Stock keeping unit; unique across all products, including archived ones.
+        description:
+          type: [string, 'null']
+          description: Optional free-text product description.
+        category:
+          $ref: '#/components/schemas/Category'
+        price:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+          description: >-
+            Positive number with up to 2 decimal places (e.g. 19.99). Values
+            with more than 2 decimal places are rejected.
+        stock:
+          type: integer
+          minimum: 0
+          description: Non-negative integer.
+        status:
+          $ref: '#/components/schemas/Status'
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp set when the product was created.
+        archivedAt:
+          type: [string, 'null']
+          format: date-time
+          description: Timestamp set when the product was soft-archived; null while active.
+
+    ProductInput:
+      type: object
+      description: Fields accepted when creating a product via POST /products.
+      example:
+        name: Wireless Mouse
+        sku: WM-1001
+        description: Ergonomic 2.4GHz wireless mouse.
+        category: electronics
+        price: 19.99
+        stock: 50
+      required:
+        - name
+        - sku
+        - category
+        - price
+        - stock
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Product name; required.
+        sku:
+          type: string
+          minLength: 1
+          description: Stock keeping unit; required and must be unique.
+        description:
+          type: string
+          description: Optional product description.
+        category:
+          $ref: '#/components/schemas/Category'
+        price:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+          description: >-
+            Required; positive number with up to 2 decimal places (e.g.
+            19.99). Values with more than 2 decimal places are rejected.
+        stock:
+          type: integer
+          minimum: 0
+          description: Required; non-negative integer.
+        status:
+          allOf:
+            - $ref: '#/components/schemas/Status'
+          description: Optional; defaults to "active" if omitted.
+
+    ProductPatch:
+      type: object
+      description: Fields accepted when partially updating a product via PATCH /products/{id}. All fields are optional, but any field provided must satisfy the same constraints as on creation.
+      example:
+        price: 24.99
+        stock: 40
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: New name; must be a non-empty string if provided.
+        sku:
+          type: string
+          minLength: 1
+          description: New sku; must be unique if changed.
+        description:
+          type: string
+          description: New description.
+        category:
+          $ref: '#/components/schemas/Category'
+        price:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+          description: >-
+            Positive number with up to 2 decimal places (e.g. 19.99). Values
+            with more than 2 decimal places are rejected.
+        stock:
+          type: integer
+          minimum: 0
+          description: Non-negative integer.
+        status:
+          $ref: '#/components/schemas/Status'
+
+    ApiEnvelope:
+      type: object
+      description: Standard response envelope used by all endpoints.
+      required:
+        - success
+        - data
+        - error
+      properties:
+        success:
+          type: boolean
+        data:
+          type: ['object', 'array', 'string', 'number', 'boolean', 'null']
+        error:
+          type: ['string', 'null']
+
+    ErrorResponse:
+      type: object
+      description: Standard error response envelope.
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        data:
+          type: 'null'
+          default: null
+        error:
+          type: string
+          description: Human-readable error message.
