@@ -14,32 +14,32 @@ const products = [];
 
 const isValidPrice = (price) => {
   if (typeof price !== 'number' || Number.isNaN(price) || price <= 0) return false;
-  return Math.round(price * 100) === price * 100;
+  return Number(price.toFixed(2)) === price;
 };
 
 const validateCreate = (data) => {
   const { name, sku, description, category, price, stock, status } = data;
 
   if (!name || typeof name !== 'string') {
-    throw new ApiError(400, 'name is required and must be a string');
+    throw new ApiError(422, 'name is required and must be a string');
   }
   if (!sku || typeof sku !== 'string') {
-    throw new ApiError(400, 'sku is required and must be a string');
+    throw new ApiError(422, 'sku is required and must be a string');
   }
   if (description !== undefined && typeof description !== 'string') {
-    throw new ApiError(400, 'description must be a string');
+    throw new ApiError(422, 'description must be a string');
   }
   if (!category || !CATEGORIES.includes(category)) {
-    throw new ApiError(400, `category is required and must be one of: ${CATEGORIES.join(', ')}`);
+    throw new ApiError(422, `category is required and must be one of: ${CATEGORIES.join(', ')}`);
   }
   if (!isValidPrice(price)) {
-    throw new ApiError(400, 'price is required, must be a positive number with up to 2 decimal places');
+    throw new ApiError(422, 'price is required, must be a positive number with up to 2 decimal places');
   }
   if (!Number.isInteger(stock) || stock < 0) {
-    throw new ApiError(400, 'stock is required and must be a non-negative integer');
+    throw new ApiError(422, 'stock is required and must be a non-negative integer');
   }
   if (status !== undefined && !STATUSES.includes(status)) {
-    throw new ApiError(400, `status must be one of: ${STATUSES.join(', ')}`);
+    throw new ApiError(422, `status must be one of: ${STATUSES.join(', ')}`);
   }
 };
 
@@ -47,25 +47,25 @@ const validatePatch = (patch) => {
   const { name, sku, description, category, price, stock, status } = patch;
 
   if (name !== undefined && (!name || typeof name !== 'string')) {
-    throw new ApiError(400, 'name must be a non-empty string');
+    throw new ApiError(422, 'name must be a non-empty string');
   }
   if (sku !== undefined && (!sku || typeof sku !== 'string')) {
-    throw new ApiError(400, 'sku must be a non-empty string');
+    throw new ApiError(422, 'sku must be a non-empty string');
   }
   if (description !== undefined && typeof description !== 'string') {
-    throw new ApiError(400, 'description must be a string');
+    throw new ApiError(422, 'description must be a string');
   }
   if (category !== undefined && !CATEGORIES.includes(category)) {
-    throw new ApiError(400, `category must be one of: ${CATEGORIES.join(', ')}`);
+    throw new ApiError(422, `category must be one of: ${CATEGORIES.join(', ')}`);
   }
   if (price !== undefined && !isValidPrice(price)) {
-    throw new ApiError(400, 'price must be a positive number with up to 2 decimal places');
+    throw new ApiError(422, 'price must be a positive number with up to 2 decimal places');
   }
   if (stock !== undefined && (!Number.isInteger(stock) || stock < 0)) {
-    throw new ApiError(400, 'stock must be a non-negative integer');
+    throw new ApiError(422, 'stock must be a non-negative integer');
   }
   if (status !== undefined && !STATUSES.includes(status)) {
-    throw new ApiError(400, `status must be one of: ${STATUSES.join(', ')}`);
+    throw new ApiError(422, `status must be one of: ${STATUSES.join(', ')}`);
   }
 };
 
@@ -158,4 +158,8 @@ export const restore = (id) => {
   return product;
 };
 
-export { remove as delete, ApiError, isUuid, isValidPrice, CATEGORIES, STATUSES };
+const resetStore = () => {
+  products.length = 0;
+};
+
+export { remove as delete, ApiError, isUuid, isValidPrice, CATEGORIES, STATUSES, resetStore };
