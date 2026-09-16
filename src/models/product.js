@@ -233,5 +233,3 @@ const resetStore = () => {
 };
 
 export { remove as delete, ApiError, isUuid, isValidPrice, CATEGORIES, STATUSES, resetStore };
-
-// End of product model
