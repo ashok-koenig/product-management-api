@@ -91,6 +91,12 @@ describe('GET /products', () => {
     assert.equal(res.status, 422);
   });
 
+  it('?status=active returns only matching products', async () => {
+    const res = await request(app).get('/products').query({ status: 'active' });
+
+    assert.equal(res.body.data.length, 2);
+  });
+
   it('?status=unknown returns 422', async () => {
     const res = await request(app).get('/products').query({ status: 'unknown' });
 
@@ -433,6 +439,25 @@ describe('PATCH /products/:id', () => {
       .send({ sku: seeded.b.sku });
 
     assert.equal(res.status, 409);
+  });
+
+  it('returns 200 when patching name to a new valid value', async () => {
+    const res = await request(app)
+      .patch(`/products/${seeded.a.id}`)
+      .send({ name: 'Updated Mouse' });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.name, 'Updated Mouse');
+  });
+
+  it('leaves the product unchanged when the request body is not JSON', async () => {
+    const res = await request(app)
+      .patch(`/products/${seeded.a.id}`)
+      .set('Content-Type', 'text/plain')
+      .send('irrelevant');
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.data, seeded.a);
   });
 });
 

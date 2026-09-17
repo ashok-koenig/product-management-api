@@ -88,6 +88,19 @@ describe('create()', () => {
   it('throws if description has the wrong type', () => {
     assert.throws(() => create(validProduct({ description: 123 })));
   });
+
+  it('throws if price has more than 2 decimal places', () => {
+    assert.throws(() => create(validProduct({ price: 19.999 })));
+  });
+
+  it('throws if price is not a number', () => {
+    assert.throws(() => create(validProduct({ price: '19.99' })));
+  });
+
+  it('accepts an explicit valid status instead of defaulting', () => {
+    const product = create(validProduct({ status: 'inactive' }));
+    assert.equal(product.status, 'inactive');
+  });
 });
 
 describe('findAll({})', () => {
@@ -127,6 +140,17 @@ describe('findAll({ minPrice, maxPrice })', () => {
   });
 });
 
+describe('findAll({ status })', () => {
+  it('returns only products matching the status', () => {
+    create(validProduct({ sku: 'SKU-001', status: 'active' }));
+    create(validProduct({ sku: 'SKU-002', status: 'discontinued' }));
+
+    const products = findAll({ status: 'discontinued' });
+    assert.equal(products.length, 1);
+    assert.equal(products[0].sku, 'SKU-002');
+  });
+});
+
 describe('findAll({ inStock: "true" })', () => {
   it('returns only products with stock > 0', () => {
     create(validProduct({ sku: 'SKU-001', stock: 5 }));
@@ -147,6 +171,14 @@ describe('findAll({ search: "wireless" })', () => {
     const products = findAll({ search: 'wireless' });
     const skus = products.map((product) => product.sku).sort();
     assert.deepEqual(skus, ['SKU-001', 'SKU-002']);
+  });
+
+  it('matches on name when description was never provided', () => {
+    create(validProduct({ sku: 'SKU-001', name: 'Wireless Mouse', description: undefined }));
+
+    const products = findAll({ search: 'wireless' });
+    assert.equal(products.length, 1);
+    assert.equal(products[0].sku, 'SKU-001');
   });
 });
 
@@ -262,6 +294,14 @@ describe('update(id, patch)', () => {
     const other = create(validProduct({ sku: 'SKU-002' }));
 
     assert.throws(() => update(other.id, { sku: 'SKU-001' }));
+  });
+
+  it('allows patching sku to its own current value', () => {
+    const product = create(validProduct({ sku: 'SKU-001' }));
+
+    const updated = update(product.id, { sku: 'SKU-001', price: 5 });
+    assert.equal(updated.sku, 'SKU-001');
+    assert.equal(updated.price, 5);
   });
 });
 
