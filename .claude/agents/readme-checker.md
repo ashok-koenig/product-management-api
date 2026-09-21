@@ -8,6 +8,7 @@ tools:
   - Read
   - Grep
   - Glob
+  - Bash
 ---
  
 You are a documentation accuracy checker for the Product Management API.
