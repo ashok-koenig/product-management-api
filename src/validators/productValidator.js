@@ -141,5 +141,6 @@ export const validateFilters = [
       return true;
     })
     .customSanitizer((value) => value === 'true'),
+  query('search').optional(),
   checkValidation,
 ];

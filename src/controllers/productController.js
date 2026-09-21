@@ -1,3 +1,4 @@
+import { matchedData } from 'express-validator';
 import * as Product from '../models/product.js';
 import { ApiError, isUuid } from '../models/product.js';
 import { catchAsync } from '../middleware/catchAsync.js';
@@ -11,7 +12,7 @@ import { catchAsync } from '../middleware/catchAsync.js';
  * Status codes: 200 (success).
  */
 export const listProducts = catchAsync(async (req, res) => {
-  const { category, status, minPrice, maxPrice, inStock, search } = req.query;
+  const { category, status, minPrice, maxPrice, inStock, search } = matchedData(req, { locations: ['query'] });
   const products = Product.findAll({ category, status, minPrice, maxPrice, inStock, search });
   res.json({ success: true, data: products, error: null });
 });
