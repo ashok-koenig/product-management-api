@@ -325,6 +325,112 @@ describe('delete(id)', () => {
   });
 });
 
+describe('findAll() indexed category/status lookups', () => {
+  it('matches a manual linear scan when filtering by category alone', () => {
+    create(validProduct({ sku: 'SKU-001', category: 'electronics' }));
+    create(validProduct({ sku: 'SKU-002', category: 'books' }));
+    create(validProduct({ sku: 'SKU-003', category: 'electronics' }));
+
+    const indexed = findAll({ category: 'electronics' });
+    const all = findAll({});
+    const expected = all.filter((product) => product.category === 'electronics');
+
+    assert.deepEqual(
+      indexed.map((product) => product.id).sort(),
+      expected.map((product) => product.id).sort(),
+    );
+  });
+
+  it('matches a manual linear scan when filtering by status alone', () => {
+    create(validProduct({ sku: 'SKU-001', status: 'active' }));
+    create(validProduct({ sku: 'SKU-002', status: 'discontinued' }));
+    create(validProduct({ sku: 'SKU-003', status: 'discontinued' }));
+
+    const indexed = findAll({ status: 'discontinued' });
+    const all = findAll({});
+    const expected = all.filter((product) => product.status === 'discontinued');
+
+    assert.deepEqual(
+      indexed.map((product) => product.id).sort(),
+      expected.map((product) => product.id).sort(),
+    );
+  });
+
+  it('matches a manual linear scan when filtering by category and status together', () => {
+    create(validProduct({ sku: 'SKU-001', category: 'electronics', status: 'active' }));
+    create(validProduct({ sku: 'SKU-002', category: 'electronics', status: 'discontinued' }));
+    create(validProduct({ sku: 'SKU-003', category: 'books', status: 'active' }));
+
+    const indexed = findAll({ category: 'electronics', status: 'active' });
+    const all = findAll({});
+    const expected = all.filter(
+      (product) => product.category === 'electronics' && product.status === 'active',
+    );
+
+    assert.deepEqual(
+      indexed.map((product) => product.id).sort(),
+      expected.map((product) => product.id).sort(),
+    );
+    assert.equal(indexed.length, 1);
+    assert.equal(indexed[0].sku, 'SKU-001');
+  });
+
+  it('reflects a category change: old category no longer matches, new category does', () => {
+    const product = create(validProduct({ sku: 'SKU-001', category: 'electronics' }));
+
+    update(product.id, { category: 'books' });
+
+    assert.deepEqual(findAll({ category: 'electronics' }), []);
+    const byNewCategory = findAll({ category: 'books' });
+    assert.equal(byNewCategory.length, 1);
+    assert.equal(byNewCategory[0].id, product.id);
+  });
+
+  it('reflects a status change: old status no longer matches, new status does', () => {
+    const product = create(validProduct({ sku: 'SKU-001', status: 'active' }));
+
+    update(product.id, { status: 'discontinued' });
+
+    assert.deepEqual(findAll({ status: 'active' }), []);
+    const byNewStatus = findAll({ status: 'discontinued' });
+    assert.equal(byNewStatus.length, 1);
+    assert.equal(byNewStatus[0].id, product.id);
+  });
+
+  it('excludes a removed (soft-archived) product from category/status filtered findAll', () => {
+    const product = create(validProduct({ sku: 'SKU-001', category: 'electronics', status: 'active' }));
+    remove(product.id);
+
+    assert.deepEqual(findAll({ category: 'electronics' }), []);
+    assert.deepEqual(findAll({ status: 'active' }), []);
+  });
+
+  it('reindexes a restored product so it reappears via category/status filtered findAll', () => {
+    const product = create(validProduct({ sku: 'SKU-001', category: 'electronics', status: 'active' }));
+    remove(product.id);
+    restore(product.id);
+
+    const byCategory = findAll({ category: 'electronics' });
+    assert.equal(byCategory.length, 1);
+    assert.equal(byCategory[0].id, product.id);
+
+    const byStatus = findAll({ status: 'active' });
+    assert.equal(byStatus.length, 1);
+    assert.equal(byStatus[0].id, product.id);
+  });
+
+  it('resetStore() fully clears indexed results too', () => {
+    create(validProduct({ sku: 'SKU-001', category: 'electronics', status: 'active' }));
+    create(validProduct({ sku: 'SKU-002', category: 'books', status: 'discontinued' }));
+
+    resetStore();
+
+    assert.deepEqual(findAll({ category: 'electronics' }), []);
+    assert.deepEqual(findAll({ status: 'discontinued' }), []);
+    assert.deepEqual(findAll({}), []);
+  });
+});
+
 describe('restore(id)', () => {
   it('clears archivedAt', () => {
     const product = create(validProduct());

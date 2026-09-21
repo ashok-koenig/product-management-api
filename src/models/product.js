@@ -12,6 +12,39 @@ class ApiError extends Error {
 
 const products = [];
 
+/**
+ * Index Maps for O(1) category/status lookups, keyed by category/status value
+ * to a Set of the matching product objects.
+ *
+ * Indexing rule: only ACTIVE (non-archived) products are indexed. A product is
+ * added to its category/status buckets on create() and restore(), and removed
+ * from its buckets on remove() (soft-archive). While a product is archived it
+ * is absent from both indexes entirely, which mirrors the fact that findAll()
+ * always excludes archived products — the indexed sets can therefore be used
+ * directly as "already archived-filtered" candidate pools.
+ */
+const categoryIndex = new Map();
+const statusIndex = new Map();
+
+const addToIndexBucket = (map, key, product) => {
+  if (!map.has(key)) map.set(key, new Set());
+  map.get(key).add(product);
+};
+
+const removeFromIndexBucket = (map, key, product) => {
+  map.get(key)?.delete(product);
+};
+
+const addToIndexes = (product) => {
+  addToIndexBucket(categoryIndex, product.category, product);
+  addToIndexBucket(statusIndex, product.status, product);
+};
+
+const removeFromIndexes = (product) => {
+  removeFromIndexBucket(categoryIndex, product.category, product);
+  removeFromIndexBucket(statusIndex, product.status, product);
+};
+
 const isValidPrice = (price) => {
   if (typeof price !== 'number' || Number.isNaN(price) || price <= 0) return false;
   return Number(price.toFixed(2)) === price;
@@ -70,6 +103,27 @@ const validatePatch = (patch) => {
 };
 
 /**
+ * Returns the candidate product list for a category/status filtered findAll(),
+ * using the O(1) index Maps instead of scanning the full products array.
+ * When both category and status are given, intersects the two indexed Sets
+ * (iterating the smaller one for efficiency).
+ * @param {string} [category] - Category to look up in categoryIndex.
+ * @param {string} [status] - Status to look up in statusIndex.
+ * @returns {Object[]} Candidate products (already archived-filtered, since
+ *   only active products are indexed) still needing the remaining filters applied.
+ */
+const getIndexedCandidates = (category, status) => {
+  if (category && status) {
+    const byCategory = categoryIndex.get(category) ?? new Set();
+    const byStatus = statusIndex.get(status) ?? new Set();
+    const [smaller, larger] = byCategory.size <= byStatus.size ? [byCategory, byStatus] : [byStatus, byCategory];
+    return [...smaller].filter((product) => larger.has(product));
+  }
+  if (category) return [...(categoryIndex.get(category) ?? new Set())];
+  return [...(statusIndex.get(status) ?? new Set())];
+};
+
+/**
  * Returns all active (non-archived) products matching the given filters.
  * Soft-archived products (archivedAt !== null) are always excluded from results.
  * @param {Object} [filters={}] - Optional filter criteria.
@@ -85,10 +139,10 @@ export const findAll = (filters = {}) => {
   const { category, status, minPrice, maxPrice, inStock, search } = filters;
   const searchTerm = search ? search.toLowerCase() : undefined;
 
-  return products.filter((product) => {
+  const candidates = category || status ? getIndexedCandidates(category, status) : products;
+
+  return candidates.filter((product) => {
     if (product.archivedAt !== null) return false;
-    if (category && product.category !== category) return false;
-    if (status && product.status !== status) return false;
     if (minPrice !== undefined && product.price < minPrice) return false;
     if (maxPrice !== undefined && product.price > maxPrice) return false;
     if (inStock !== undefined && (product.stock > 0) !== inStock) return false;
@@ -154,6 +208,7 @@ export const create = (data) => {
   };
 
   products.push(product);
+  addToIndexes(product);
   return product;
 };
 
@@ -192,7 +247,19 @@ export const update = (id, patch) => {
     if (allowedPatch[key] === undefined) delete allowedPatch[key];
   });
 
+  const categoryChanged = allowedPatch.category !== undefined && allowedPatch.category !== product.category;
+  const statusChanged = allowedPatch.status !== undefined && allowedPatch.status !== product.status;
+
+  // product is always active here (findById only returns non-archived products),
+  // so it is currently present in both index buckets and must be moved.
+  if (categoryChanged) removeFromIndexBucket(categoryIndex, product.category, product);
+  if (statusChanged) removeFromIndexBucket(statusIndex, product.status, product);
+
   Object.assign(product, allowedPatch);
+
+  if (categoryChanged) addToIndexBucket(categoryIndex, product.category, product);
+  if (statusChanged) addToIndexBucket(statusIndex, product.status, product);
+
   return product;
 };
 
@@ -209,6 +276,7 @@ export const remove = (id) => {
     throw new ApiError(404, `Product with id "${id}" not found`);
   }
   product.archivedAt = new Date();
+  removeFromIndexes(product);
   return product;
 };
 
@@ -225,11 +293,14 @@ export const restore = (id) => {
     throw new ApiError(404, `Product with id "${id}" not found`);
   }
   product.archivedAt = null;
+  addToIndexes(product);
   return product;
 };
 
 const resetStore = () => {
   products.length = 0;
+  categoryIndex.clear();
+  statusIndex.clear();
 };
 
 export { remove as delete, ApiError, isUuid, isValidPrice, CATEGORIES, STATUSES, resetStore };
