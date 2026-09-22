@@ -461,6 +461,86 @@ describe('PATCH /products/:id', () => {
   });
 });
 
+describe('PATCH /products/bulk-status', () => {
+  it('returns 200 and updates the status of every given product', async () => {
+    const res = await request(app)
+      .patch('/products/bulk-status')
+      .send({ ids: [seeded.a.id, seeded.b.id], status: 'inactive' });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.length, 2);
+    assert.ok(res.body.data.every((product) => product.status === 'inactive'));
+  });
+
+  it('leaves other fields untouched', async () => {
+    const res = await request(app)
+      .patch('/products/bulk-status')
+      .send({ ids: [seeded.a.id], status: 'discontinued' });
+
+    assert.equal(res.body.data[0].price, seeded.a.price);
+    assert.equal(res.body.data[0].sku, seeded.a.sku);
+  });
+
+  it('returns 422 when ids is missing', async () => {
+    const res = await request(app).patch('/products/bulk-status').send({ status: 'active' });
+
+    assert.equal(res.status, 422);
+  });
+
+  it('returns 422 when ids is an empty array', async () => {
+    const res = await request(app)
+      .patch('/products/bulk-status')
+      .send({ ids: [], status: 'active' });
+
+    assert.equal(res.status, 422);
+  });
+
+  it('returns 422 when ids contains a non-uuid entry', async () => {
+    const res = await request(app)
+      .patch('/products/bulk-status')
+      .send({ ids: [seeded.a.id, 'not-a-uuid'], status: 'active' });
+
+    assert.equal(res.status, 422);
+  });
+
+  it('returns 422 when status is missing', async () => {
+    const res = await request(app)
+      .patch('/products/bulk-status')
+      .send({ ids: [seeded.a.id] });
+
+    assert.equal(res.status, 422);
+  });
+
+  it('returns 422 when status is invalid', async () => {
+    const res = await request(app)
+      .patch('/products/bulk-status')
+      .send({ ids: [seeded.a.id], status: 'bogus' });
+
+    assert.equal(res.status, 422);
+  });
+
+  it('returns 404 and applies no changes when one id does not match an active product', async () => {
+    const res = await request(app)
+      .patch('/products/bulk-status')
+      .send({ ids: [seeded.a.id, '00000000-0000-0000-0000-000000000000'], status: 'inactive' });
+
+    assert.equal(res.status, 404);
+
+    const getRes = await request(app).get(`/products/${seeded.a.id}`);
+    assert.equal(getRes.body.data.status, 'active');
+  });
+
+  it('returns 404 when one of the ids is an archived product', async () => {
+    await request(app).delete(`/products/${seeded.b.id}`);
+
+    const res = await request(app)
+      .patch('/products/bulk-status')
+      .send({ ids: [seeded.a.id, seeded.b.id], status: 'inactive' });
+
+    assert.equal(res.status, 404);
+  });
+});
+
 describe('DELETE /products/:id', () => {
   it('returns 204', async () => {
     const res = await request(app).delete(`/products/${seeded.a.id}`);

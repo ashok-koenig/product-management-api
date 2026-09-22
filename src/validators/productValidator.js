@@ -65,7 +65,6 @@ export const validateFilters = [
         throw new Error('inStock must be "true" or "false"');
       }
       return true;
-    })
-    .customSanitizer((value) => value === 'true'),
+    }),
   checkValidation,
 ];

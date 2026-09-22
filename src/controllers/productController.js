@@ -12,7 +12,14 @@ import { catchAsync } from '../middleware/catchAsync.js';
  */
 export const listProducts = catchAsync(async (req, res) => {
   const { category, status, minPrice, maxPrice, inStock, search } = req.query;
-  const products = Product.findAll({ category, status, minPrice, maxPrice, inStock, search });
+  const products = Product.findAll({
+    category,
+    status,
+    minPrice,
+    maxPrice,
+    inStock: inStock === undefined ? undefined : inStock === 'true',
+    search,
+  });
   res.json({ success: true, data: products, error: null });
 });
 
@@ -61,6 +68,20 @@ export const updateProduct = catchAsync(async (req, res) => {
   const { name, sku, description, category, price, stock, status } = req.body ?? {};
   const product = Product.update(id, { name, sku, description, category, price, stock, status });
   res.json({ success: true, data: product, error: null });
+});
+
+/**
+ * Applies a status change to a batch of active products atomically.
+ * @param {import("express").Request} req - req.body holds { ids: string[], status }.
+ * @param {import("express").Response} res - Sends 200 with the array of updated products.
+ * @param {import("express").NextFunction} next - Not used directly; errors are forwarded by catchAsync.
+ * @returns {Promise<void>}
+ * Status codes: 200 (success), 422 (validation failure), 404 (an id does not match an active product).
+ */
+export const bulkUpdateStatus = catchAsync(async (req, res) => {
+  const { ids, status } = req.body ?? {};
+  const products = Product.updateManyStatus(ids, status);
+  res.json({ success: true, data: products, error: null });
 });
 
 /**

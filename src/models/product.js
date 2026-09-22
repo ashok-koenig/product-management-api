@@ -264,6 +264,42 @@ export const update = (id, patch) => {
 };
 
 /**
+ * Validates and applies a status change to a batch of active products.
+ * Atomic: if any id fails validation or does not match an active product,
+ * no products are modified.
+ * @param {string[]} ids - Ids of the active products to update; must be a non-empty array of valid UUIDs.
+ * @param {string} status - The new status; must be one of STATUSES.
+ * @returns {Object[]} The updated products, in the same order as ids.
+ * @throws {ApiError} 422 if ids is not a non-empty array of valid UUIDs, or status is not a valid enum value.
+ * @throws {ApiError} 404 if any id does not match an active product.
+ */
+export const updateManyStatus = (ids, status) => {
+  if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => typeof id === 'string' && isUuid(id))) {
+    throw new ApiError(422, 'ids is required and must be a non-empty array of valid UUIDs');
+  }
+  if (!status || !STATUSES.includes(status)) {
+    throw new ApiError(422, `status is required and must be one of: ${STATUSES.join(', ')}`);
+  }
+
+  const matched = ids.map((id) => {
+    const product = findById(id);
+    if (!product) {
+      throw new ApiError(404, `Product with id "${id}" not found`);
+    }
+    return product;
+  });
+
+  matched.forEach((product) => {
+    if (product.status === status) return;
+    removeFromIndexBucket(statusIndex, product.status, product);
+    product.status = status;
+    addToIndexBucket(statusIndex, product.status, product);
+  });
+
+  return matched;
+};
+
+/**
  * Soft-archives an active product by setting its archivedAt timestamp.
  * The product is not removed from the store, only excluded from findAll/findById results until restored.
  * @param {string} id - The id of the active product to archive.
@@ -303,4 +339,12 @@ const resetStore = () => {
   statusIndex.clear();
 };
 
-export { remove as delete, ApiError, isUuid, isValidPrice, CATEGORIES, STATUSES, resetStore };
+export {
+  remove as delete,
+  ApiError,
+  isUuid,
+  isValidPrice,
+  CATEGORIES,
+  STATUSES,
+  resetStore,
+};

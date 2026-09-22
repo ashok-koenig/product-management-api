@@ -4,6 +4,7 @@ import {
   getProduct,
   createProduct,
   updateProduct,
+  bulkUpdateStatus,
   deleteProduct,
   restoreProduct,
 } from '../controllers/productController.js';
@@ -14,6 +15,7 @@ const router = Router();
 router.get('/', validateFilters, listProducts);
 router.get('/:id', validateId, getProduct);
 router.post('/', createProduct);
+router.patch('/bulk-status', bulkUpdateStatus);
 router.patch('/:id', validateId, updateProduct);
 router.delete('/:id/restore', validateId, restoreProduct);
 router.delete('/:id', validateId, deleteProduct);

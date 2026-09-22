@@ -120,6 +120,50 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /products/bulk-status:
+    patch:
+      summary: Apply a status change to a batch of active products atomically
+      operationId: bulkUpdateProductStatus
+      tags: [Products]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkStatusUpdate'
+      responses:
+        '200':
+          description: >-
+            All matching products were updated to the given status. Returned
+            in the same order as the given ids.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Product'
+        '404':
+          description: >-
+            No active product exists for one of the given ids. No products
+            were updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: >-
+            ids is not a non-empty array of valid UUIDs, or status is not a
+            valid enum value.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /products/{id}:
     get:
       summary: Get a single active product by id
@@ -412,6 +456,28 @@ components:
           type: integer
           minimum: 0
           description: Non-negative integer.
+        status:
+          $ref: '#/components/schemas/Status'
+
+    BulkStatusUpdate:
+      type: object
+      description: Fields accepted when applying a status change to a batch of products via PATCH /products/bulk-status.
+      example:
+        ids:
+          - 3fa85f64-5717-4562-b3fc-2c963f66afa6
+          - 9b2e5f3a-1234-4a56-8abc-2c963f66afa6
+        status: inactive
+      required:
+        - ids
+        - status
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+          description: Ids of the active products to update; must be a non-empty array of valid UUIDs.
         status:
           $ref: '#/components/schemas/Status'
 
