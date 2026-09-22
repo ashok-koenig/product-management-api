@@ -7,15 +7,15 @@ import {
   deleteProduct,
   restoreProduct,
 } from '../controllers/productController.js';
-import { validateCreate, validateUpdate, validateFilters } from '../validators/productValidator.js';
+import { validateId, validateFilters } from '../validators/productValidator.js';
 
 const router = Router();
 
 router.get('/', validateFilters, listProducts);
-router.get('/:id', getProduct);
-router.post('/', validateCreate, createProduct);
-router.patch('/:id', validateUpdate, updateProduct);
-router.delete('/:id/restore', restoreProduct);
-router.delete('/:id', deleteProduct);
+router.get('/:id', validateId, getProduct);
+router.post('/', createProduct);
+router.patch('/:id', validateId, updateProduct);
+router.delete('/:id/restore', validateId, restoreProduct);
+router.delete('/:id', validateId, deleteProduct);
 
 export default router;

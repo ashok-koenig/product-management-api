@@ -9,7 +9,7 @@
     },
     "product-api": {
       "type": "http",
-      "url": "http://localhost:3000/mcp"
+      "url": "https://product-management-api-maxc.onrender.com/mcp"
     }
   }
 }

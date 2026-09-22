@@ -1,5 +1,5 @@
 import * as Product from '../models/product.js';
-import { ApiError, isUuid } from '../models/product.js';
+import { ApiError } from '../models/product.js';
 import { catchAsync } from '../middleware/catchAsync.js';
 
 /**
@@ -26,10 +26,6 @@ export const listProducts = catchAsync(async (req, res) => {
  */
 export const getProduct = catchAsync(async (req, res) => {
   const { id } = req.params;
-  if (!isUuid(id)) {
-    throw new ApiError(400, `"${id}" is not a valid product id`);
-  }
-
   const product = Product.findById(id);
   if (!product) {
     throw new ApiError(404, `Product with id "${id}" not found`);
@@ -47,7 +43,8 @@ export const getProduct = catchAsync(async (req, res) => {
  * Status codes: 201 (created), 422 (validation failure), 409 (sku already exists).
  */
 export const createProduct = catchAsync(async (req, res) => {
-  const product = Product.create(req.body ?? {});
+  const { name, sku, description, category, price, stock, status } = req.body ?? {};
+  const product = Product.create({ name, sku, description, category, price, stock, status });
   res.status(201).json({ success: true, data: product, error: null });
 });
 
@@ -61,11 +58,8 @@ export const createProduct = catchAsync(async (req, res) => {
  */
 export const updateProduct = catchAsync(async (req, res) => {
   const { id } = req.params;
-  if (!isUuid(id)) {
-    throw new ApiError(400, `"${id}" is not a valid product id`);
-  }
-
-  const product = Product.update(id, req.body ?? {});
+  const { name, sku, description, category, price, stock, status } = req.body ?? {};
+  const product = Product.update(id, { name, sku, description, category, price, stock, status });
   res.json({ success: true, data: product, error: null });
 });
 
@@ -79,10 +73,6 @@ export const updateProduct = catchAsync(async (req, res) => {
  */
 export const deleteProduct = catchAsync(async (req, res) => {
   const { id } = req.params;
-  if (!isUuid(id)) {
-    throw new ApiError(400, `"${id}" is not a valid product id`);
-  }
-
   Product.delete(id);
   res.status(204).send();
 });
@@ -97,10 +87,6 @@ export const deleteProduct = catchAsync(async (req, res) => {
  */
 export const restoreProduct = catchAsync(async (req, res) => {
   const { id } = req.params;
-  if (!isUuid(id)) {
-    throw new ApiError(400, `"${id}" is not a valid product id`);
-  }
-
   const product = Product.restore(id);
   res.json({ success: true, data: product, error: null });
 });
