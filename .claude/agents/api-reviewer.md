@@ -29,6 +29,7 @@ severity (Low / Medium / High), and a concrete recommended fix.
 - Every JSON response must use the { success, data } or { success, error } envelope
 - HTTP status codes must follow the project mapping in CLAUDE.md
 - SKU format /^[A-Z0-9-]{3,20}$/ must be enforced on create and update
+- Every tool registration in src/mcp.js must have both a description and a Zod inputSchema; tools without schemas must be flagged as High severity
  
 ### Security
 - Mass assignment: id, createdAt, and archivedAt must not be settable by callers
