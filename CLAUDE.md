@@ -46,5 +46,11 @@ id, name, sku, description, category, price, stock, status, createdAt, archivedA
 - HTTP tests: supertest against src/app.js (not src/index.js)
 - Reset store with productModel.clearAll() in beforeEach
 - Coverage target: > 85% for files in src/
+## Hook conventions
+- Hook scripts go in .claude/hooks/ as Node.js .mjs files with no npm packages.
+- Each script reads the event JSON from stdin and never crashes (exit 0 unless it must block).
+- Register hooks in .claude/settings.json with the command
+  node "${CLAUDE_PROJECT_DIR}/.claude/hooks/<name>.mjs" unless told otherwise.
+- Merge into settings files. Never overwrite existing hooks.
 ## Additional instructions
 @docs/openapi.yaml (OpenAPI spec — use as reference for endpoint shapes)
