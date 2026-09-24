@@ -3,3 +3,4 @@ node_modules/
 *.log
 CLAUDE.local.md
 .claude/change-log.jsonl
+.claude/last-stop
