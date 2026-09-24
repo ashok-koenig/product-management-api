@@ -1,6 +1,10 @@
-import * as Product from '../models/product.js';
-import { ApiError } from '../models/product.js';
-import { catchAsync } from '../middleware/catchAsync.js';
+/**
+ * Request handlers for the /products routes; wraps src/models/product.js
+ * with HTTP concerns (status codes, the { success, data, error } envelope).
+ */
+import * as Product from "../models/product.js";
+import { ApiError } from "../models/product.js";
+import { catchAsync } from "../middleware/catchAsync.js";
 
 /**
  * Lists active products, optionally filtered by query params.
@@ -17,7 +21,7 @@ export const listProducts = catchAsync(async (req, res) => {
     status,
     minPrice,
     maxPrice,
-    inStock: inStock === undefined ? undefined : inStock === 'true',
+    inStock: inStock === undefined ? undefined : inStock === "true",
     search,
   });
   res.json({ success: true, data: products, error: null });
@@ -50,8 +54,17 @@ export const getProduct = catchAsync(async (req, res) => {
  * Status codes: 201 (created), 422 (validation failure), 409 (sku already exists).
  */
 export const createProduct = catchAsync(async (req, res) => {
-  const { name, sku, description, category, price, stock, status } = req.body ?? {};
-  const product = Product.create({ name, sku, description, category, price, stock, status });
+  const { name, sku, description, category, price, stock, status } =
+    req.body ?? {};
+  const product = Product.create({
+    name,
+    sku,
+    description,
+    category,
+    price,
+    stock,
+    status,
+  });
   res.status(201).json({ success: true, data: product, error: null });
 });
 
@@ -65,8 +78,17 @@ export const createProduct = catchAsync(async (req, res) => {
  */
 export const updateProduct = catchAsync(async (req, res) => {
   const { id } = req.params;
-  const { name, sku, description, category, price, stock, status } = req.body ?? {};
-  const product = Product.update(id, { name, sku, description, category, price, stock, status });
+  const { name, sku, description, category, price, stock, status } =
+    req.body ?? {};
+  const product = Product.update(id, {
+    name,
+    sku,
+    description,
+    category,
+    price,
+    stock,
+    status,
+  });
   res.json({ success: true, data: product, error: null });
 });
 
